@@ -1,0 +1,2017 @@
+-- GUI Creation with Native Roblox UI
+local UIS = game:GetService("UserInputService")
+local Players = game:GetService("Players")
+
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "MetaHubV6"
+ScreenGui.Parent = game.Players.LocalPlayer:WaitForChild("PlayerGui")
+ScreenGui.ResetOnSpawn = false
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+local MainFrame = Instance.new("Frame")
+MainFrame.Size = UDim2.new(0, 600, 0, 400)
+MainFrame.Position = UDim2.new(0.5, -300, 0.5, -200)
+MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+MainFrame.BorderSizePixel = 0
+MainFrame.ZIndex = 1
+MainFrame.Parent = ScreenGui
+
+-- Draggable Functionality
+local dragging, dragInput, dragStart, startPos
+MainFrame.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = true
+        dragStart = input.Position
+        startPos = MainFrame.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+            end
+        end)
+    end
+end)
+MainFrame.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement and dragging then
+        dragInput = input
+    end
+end)
+game:GetService("RunService").Stepped:Connect(function()
+    if dragging and dragInput then
+        local delta = dragInput.Position - dragStart
+        MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
+
+local TitleBar = Instance.new("Frame")
+TitleBar.Size = UDim2.new(1, 0, 0, 30)
+TitleBar.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+TitleBar.BorderSizePixel = 0
+TitleBar.ZIndex = 2
+TitleBar.Parent = MainFrame
+
+-- Minimize Button (Left side)
+local MinimizeButton = Instance.new("TextButton")
+MinimizeButton.Size = UDim2.new(0, 30, 0, 30)
+MinimizeButton.Position = UDim2.new(0, 0, 0, 0)
+MinimizeButton.BackgroundColor3 = Color3.fromRGB(255, 165, 0) -- Orange for distinction
+MinimizeButton.Text = "-"
+MinimizeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+MinimizeButton.ZIndex = 2
+MinimizeButton.Parent = TitleBar
+local isMinimized = false
+
+local TitleLabel = Instance.new("TextLabel")
+TitleLabel.Size = UDim2.new(1, -60, 1, 0) -- Adjusted for both buttons
+TitleLabel.Position = UDim2.new(0, 30, 0, 0) -- Shifted right to accommodate MinimizeButton
+TitleLabel.BackgroundTransparency = 1
+TitleLabel.Text = "Meta Hub V5"
+TitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+TitleLabel.TextScaled = true
+TitleLabel.ZIndex = 2
+TitleLabel.Parent = TitleBar
+
+local CloseButton = Instance.new("TextButton")
+CloseButton.Size = UDim2.new(0, 30, 0, 30)
+CloseButton.Position = UDim2.new(1, -30, 0, 0)
+CloseButton.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+CloseButton.Text = "X"
+CloseButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+CloseButton.ZIndex = 2
+CloseButton.Parent = TitleBar
+CloseButton.MouseButton1Click:Connect(function()
+    ScreenGui.Enabled = false
+end)
+
+local TabFrame = Instance.new("ScrollingFrame")
+TabFrame.Size = UDim2.new(0, 150, 1, -30)
+TabFrame.Position = UDim2.new(0, 0, 0, 30)
+TabFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+TabFrame.ZIndex = 1
+TabFrame.ScrollBarThickness = 5
+TabFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+TabFrame.Parent = MainFrame
+
+local ContentFrame = Instance.new("Frame")
+ContentFrame.Size = UDim2.new(1, -150, 1, -30)
+ContentFrame.Position = UDim2.new(0, 150, 0, 30)
+ContentFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+ContentFrame.ZIndex = 1
+ContentFrame.Parent = MainFrame
+
+-- Minimize Functionality
+MinimizeButton.MouseButton1Click:Connect(function()
+    isMinimized = not isMinimized
+    if isMinimized then
+        MainFrame.Size = UDim2.new(0, 600, 0, 30) -- Only title bar height
+        TabFrame.Visible = false
+        ContentFrame.Visible = false
+        MinimizeButton.Text = "+"
+    else
+        MainFrame.Size = UDim2.new(0, 600, 0, 400) -- Full size
+        TabFrame.Visible = true
+        ContentFrame.Visible = true
+        MinimizeButton.Text = "-"
+    end
+end)
+
+-- Tab Management
+local tabs = {}
+local currentTab = nil
+
+local function createTab(name, icon)
+    local tabButton = Instance.new("TextButton")
+    tabButton.Size = UDim2.new(1, 0, 0, 40)
+    tabButton.Position = UDim2.new(0, 0, 0, #tabs * 40)
+    tabButton.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+    tabButton.Text = name
+    tabButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    tabButton.ZIndex = 1
+    tabButton.Parent = TabFrame
+    
+    local content = Instance.new("ScrollingFrame")
+    content.Size = UDim2.new(1, 0, 1, 0)
+    content.BackgroundTransparency = 1
+    content.CanvasSize = UDim2.new(0, 0, 0, 0)
+    content.ScrollBarThickness = 5
+    content.ZIndex = 1
+    content.Parent = ContentFrame
+    content.Visible = false
+    
+    tabButton.MouseButton1Click:Connect(function()
+        if currentTab then
+            currentTab.content.Visible = false
+            currentTab.button.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+        end
+        content.Visible = true
+        tabButton.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+        currentTab = {button = tabButton, content = content}
+    end)
+    
+    table.insert(tabs, {name = name, button = tabButton, content = content})
+    TabFrame.CanvasSize = UDim2.new(0, 0, 0, #tabs * 40)
+    return content
+end
+
+-- Helper Functions for UI Elements
+local function addButton(parent, name, callback)
+    local button = Instance.new("TextButton")
+    button.Size = UDim2.new(0.9, 0, 0, 30)
+    button.Position = UDim2.new(0.05, 0, 0, parent.CanvasSize.Y.Offset)
+    button.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    button.Text = name
+    button.TextColor3 = Color3.fromRGB(255, 255, 255)
+    button.ZIndex = 1
+    button.Parent = parent
+    button.MouseButton1Click:Connect(callback)
+    parent.CanvasSize = UDim2.new(0, 0, 0, parent.CanvasSize.Y.Offset + 40)
+end
+
+local function addToggle(parent, name, default, callback)
+    local toggleFrame = Instance.new("Frame")
+    toggleFrame.Size = UDim2.new(0.9, 0, 0, 30)
+    toggleFrame.Position = UDim2.new(0.05, 0, 0, parent.CanvasSize.Y.Offset)
+    toggleFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    toggleFrame.ZIndex = 1
+    toggleFrame.Parent = parent
+    
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(0.7, 0, 1, 0)
+    label.BackgroundTransparency = 1
+    label.Text = name
+    label.TextColor3 = Color3.fromRGB(255, 255, 255)
+    label.ZIndex = 1
+    label.Parent = toggleFrame
+    
+    local toggle = Instance.new("TextButton")
+    toggle.Size = UDim2.new(0.2, 0, 1, 0)
+    toggle.Position = UDim2.new(0.8, 0, 0, 0)
+    toggle.BackgroundColor3 = default and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
+    toggle.Text = default and "ON" or "OFF"
+    toggle.TextColor3 = Color3.fromRGB(255, 255, 255)
+    toggle.ZIndex = 1
+    toggle.Parent = toggleFrame
+    
+    local state = default
+    toggle.MouseButton1Click:Connect(function()
+        state = not state
+        toggle.BackgroundColor3 = state and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
+        toggle.Text = state and "ON" or "OFF"
+        callback(state)
+    end)
+    
+    parent.CanvasSize = UDim2.new(0, 0, 0, parent.CanvasSize.Y.Offset + 40)
+end
+
+local function addSlider(parent, name, min, max, default, callback)
+    local sliderFrame = Instance.new("Frame")
+    sliderFrame.Size = UDim2.new(0.9, 0, 0, 50)
+    sliderFrame.Position = UDim2.new(0.05, 0, 0, parent.CanvasSize.Y.Offset)
+    sliderFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    sliderFrame.ZIndex = 1
+    sliderFrame.Parent = parent
+    
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, 0, 0.4, 0)
+    label.BackgroundTransparency = 1
+    label.Text = name .. ": " .. default
+    label.TextColor3 = Color3.fromRGB(255, 255, 255)
+    label.ZIndex = 1
+    label.Parent = sliderFrame
+    
+    local slider = Instance.new("TextButton")
+    slider.Size = UDim2.new(0.9, 0, 0.3, 0)
+    slider.Position = UDim2.new(0.05, 0, 0.5, 0)
+    slider.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+    slider.Text = ""
+    slider.ZIndex = 1
+    slider.Parent = sliderFrame
+    
+    local fill = Instance.new("Frame")
+    fill.Size = UDim2.new((default - min) / (max - min), 0, 1, 0)
+    fill.BackgroundColor3 = Color3.fromRGB(0, 120, 255)
+    fill.ZIndex = 1
+    fill.Parent = slider
+    
+    local sliding = false
+    slider.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            sliding = true
+            local mouse = UIS:GetMouseLocation()
+            local value = math.clamp((mouse.X - slider.AbsolutePosition.X) / slider.AbsoluteSize.X, 0, 1) * (max - min) + min
+            fill.Size = UDim2.new((value - min) / (max - min), 0, 1, 0)
+            label.Text = name .. ": " .. math.floor(value)
+            callback(value)
+        end
+    end)
+    
+    slider.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            sliding = false
+        end
+    end)
+    
+    UIS.InputChanged:Connect(function(input)
+        if sliding and input.UserInputType == Enum.UserInputType.MouseMovement then
+            local mouse = UIS:GetMouseLocation()
+            local value = math.clamp((mouse.X - slider.AbsolutePosition.X) / slider.AbsoluteSize.X, 0, 1) * (max - min) + min
+            fill.Size = UDim2.new((value - min) / (max - min), 0, 1, 0)
+            label.Text = name .. ": " .. math.floor(value)
+            callback(value)
+        end
+    end)
+    
+    parent.CanvasSize = UDim2.new(0, 0, 0, parent.CanvasSize.Y.Offset + 60)
+end
+
+local function addDropdown(parent, name, options, default, callback)
+    local dropdownFrame = Instance.new("Frame")
+    dropdownFrame.Size = UDim2.new(0.9, 0, 0, 30)
+    dropdownFrame.Position = UDim2.new(0.05, 0, 0, parent.CanvasSize.Y.Offset)
+    dropdownFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    dropdownFrame.ZIndex = 1
+    dropdownFrame.Parent = parent
+    
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(0.5, 0, 1, 0)
+    label.BackgroundTransparency = 1
+    label.Text = name
+    label.TextColor3 = Color3.fromRGB(255, 255, 255)
+    label.ZIndex = 1
+    label.Parent = dropdownFrame
+    
+    local button = Instance.new("TextButton")
+    button.Size = UDim2.new(0.4, 0, 1, 0)
+    button.Position = UDim2.new(0.6, 0, 0, 0)
+    button.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+    button.Text = default or "Select"
+    button.TextColor3 = Color3.fromRGB(255, 255, 255)
+    button.ZIndex = 1
+    button.Parent = dropdownFrame
+    
+    local list = Instance.new("Frame")
+    list.Size = UDim2.new(0, button.AbsoluteSize.X, 0, math.min(#options * 30, 150))
+    list.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+    list.Visible = false
+    list.ZIndex = 20
+    list.Parent = ScreenGui
+    
+    local listScroll = Instance.new("ScrollingFrame")
+    listScroll.Size = UDim2.new(1, 0, 1, 0)
+    listScroll.BackgroundTransparency = 1
+    listScroll.CanvasSize = UDim2.new(0, 0, 0, #options * 30)
+    listScroll.ScrollBarThickness = 5
+    listScroll.ZIndex = 20
+    listScroll.Parent = list
+    
+    local function updateListPosition()
+        local absPos = button.AbsolutePosition
+        local absSize = button.AbsoluteSize
+        local screenSize = ScreenGui.AbsoluteSize
+        local newY = absPos.Y + absSize.Y
+        if newY + list.AbsoluteSize.Y > screenSize.Y then
+            newY = absPos.Y - list.AbsoluteSize.Y
+        end
+        list.Position = UDim2.new(0, absPos.X, 0, newY)
+    end
+    
+    local function populateList(optionsList)
+        listScroll:ClearAllChildren()
+        for i, option in ipairs(optionsList) do
+            local optButton = Instance.new("TextButton")
+            optButton.Size = UDim2.new(1, 0, 0, 30)
+            optButton.Position = UDim2.new(0, 0, 0, (i-1) * 30)
+            optButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+            optButton.Text = option
+            optButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+            optButton.ZIndex = 20
+            optButton.Parent = listScroll
+            optButton.MouseButton1Click:Connect(function()
+                button.Text = option
+                list.Visible = false
+                callback(option)
+            end)
+        end
+        listScroll.CanvasSize = UDim2.new(0, 0, 0, #optionsList * 30)
+        list.Size = UDim2.new(0, button.AbsoluteSize.X, 0, math.min(#optionsList * 30, 150))
+    end
+    
+    populateList(options)
+    
+    button.MouseButton1Click:Connect(function()
+        list.Visible = not list.Visible
+        if list.Visible then
+            updateListPosition()
+        end
+    end)
+    
+    parent.CanvasSize = UDim2.new(0, 0, 0, parent.CanvasSize.Y.Offset + 40)
+    return {frame = dropdownFrame, update = populateList}
+end
+
+local function addTextbox(parent, name, default, callback)
+    local textboxFrame = Instance.new("Frame")
+    textboxFrame.Size = UDim2.new(0.9, 0, 0, 30)
+    textboxFrame.Position = UDim2.new(0.05, 0, 0, parent.CanvasSize.Y.Offset)
+    textboxFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    textboxFrame.ZIndex = 1
+    textboxFrame.Parent = parent
+    
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(0.5, 0, 1, 0)
+    label.BackgroundTransparency = 1
+    label.Text = name
+    label.TextColor3 = Color3.fromRGB(255, 255, 255)
+    label.ZIndex = 1
+    label.Parent = textboxFrame
+    
+    local textbox = Instance.new("TextBox")
+    textbox.Size = UDim2.new(0.4, 0, 1, 0)
+    textbox.Position = UDim2.new(0.6, 0, 0, 0)
+    textbox.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+    textbox.Text = default
+    textbox.TextColor3 = Color3.fromRGB(255, 255, 255)
+    textbox.ZIndex = 1
+    textbox.Parent = textboxFrame
+    textbox.FocusLost:Connect(function(enterPressed)
+        if enterPressed then callback(textbox.Text) end
+    end)
+    
+    parent.CanvasSize = UDim2.new(0, 0, 0, parent.CanvasSize.Y.Offset + 40)
+end
+
+-- Tab Definitions
+local tabContents = {
+    Player = createTab("Player", "rbxassetid://4483345998"),
+    LocalPlayer = createTab("LocalPlayer", "rbxassetid://4483345998"),
+    Combat = createTab("Combat", "rbxassetid://6031075933"),
+    Teleport = createTab("Teleport", "rbxassetid://6031094665"),
+    ESP = createTab("ESP", "rbxassetid://7736168172"),
+    Visuals = createTab("Visuals", "rbxassetid://6034837799"),
+    Animations = createTab("Animations", "rbxassetid://6031094678"),
+    Bypass = createTab("Bypass", "rbxassetid://11604639954"),
+    Meta = createTab("Meta", "rbxassetid://6023891164"),
+    Server = createTab("Server", "rbxassetid://6031079151"),
+    Camera = createTab("Camera", "rbxassetid://6034837799")
+}
+
+-- 1. Player Section
+local selectedPlayer = nil
+local playerDropdown = addDropdown(tabContents.Player, "Player List", {}, nil, function(chosenPlayer)
+    selectedPlayer = chosenPlayer
+end)
+
+addButton(tabContents.Player, "Teleport to Player", function()
+    if selectedPlayer then
+        local target = Players:FindFirstChild(selectedPlayer)
+        if target and target.Character then
+            Players.LocalPlayer.Character:PivotTo(target.Character.HumanoidRootPart.CFrame)
+        end
+    end
+end)
+
+addButton(tabContents.Player, "Kill Player", function()
+    if selectedPlayer then
+        local target = Players:FindFirstChild(selectedPlayer)
+        if target and target.Character then
+            target.Character:BreakJoints()
+        end
+    end
+end)
+
+addSlider(tabContents.Player, "Set Health", 0, 100, 100, function(value)
+    if selectedPlayer then
+        local target = Players:FindFirstChild(selectedPlayer)
+        if target and target.Character and target.Character:FindFirstChild("Humanoid") then
+            target.Character.Humanoid.Health = value
+        end
+    end
+end)
+
+addButton(tabContents.Player, "Spectate", function()
+    if selectedPlayer then
+        local target = Players:FindFirstChild(selectedPlayer)
+        if target and target.Character then
+            workspace.CurrentCamera.CameraSubject = target.Character.Humanoid
+        end
+    end
+end)
+
+addButton(tabContents.Player, "Fling Player", function()
+    if selectedPlayer then
+        local target = Players:FindFirstChild(selectedPlayer)
+        if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
+            local localChar = Players.LocalPlayer.Character
+            if localChar and localChar:FindFirstChild("HumanoidRootPart") then
+                local originalCFrame = localChar.HumanoidRootPart.CFrame
+                local targetCFrame = target.Character.HumanoidRootPart.CFrame
+                localChar:PivotTo(targetCFrame)
+                task.wait(0.1)
+                target.Character.HumanoidRootPart.Velocity = Vector3.new(0, 10000, 0)
+                task.wait(0.1)
+                localChar:PivotTo(originalCFrame)
+            end
+        end
+    end
+end)
+
+addButton(tabContents.Player, "Freeze Player", function()
+    if selectedPlayer then
+        local target = Players:FindFirstChild(selectedPlayer)
+        if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
+            target.Character.HumanoidRootPart.Anchored = not target.Character.HumanoidRootPart.Anchored
+        end
+    end
+end)
+
+addButton(tabContents.Player, "Kick Player (Client Side)", function()
+    if selectedPlayer then
+        local target = Players:FindFirstChild(selectedPlayer)
+        if target == Players.LocalPlayer then
+            Players.LocalPlayer:Kick("Kicked (client-side only)")
+        end
+    end
+end)
+
+local followPlayerEnabled = false
+local trackPlayerEnabled = false
+local followDistance = 5
+local followHeight = 0
+local followLateral = 0
+
+addToggle(tabContents.Player, "Follow Player", false, function(value)
+    followPlayerEnabled = value
+    trackPlayerEnabled = false
+    if not value then
+        followDistance = 5
+        followHeight = 0
+        followLateral = 0
+    end
+end)
+
+addSlider(tabContents.Player, "Follow Distance", -20, 20, 5, function(value)
+    followDistance = value
+end)
+
+addSlider(tabContents.Player, "Follow Height", -10, 10, 0, function(value)
+    followHeight = value
+end)
+
+addSlider(tabContents.Player, "Follow Lateral", -10, 10, 0, function(value)
+    followLateral = value
+end)
+
+addToggle(tabContents.Player, "Track Player (Camera)", false, function(value)
+    trackPlayerEnabled = value
+    followPlayerEnabled = false
+    if not value then
+        workspace.CurrentCamera.CameraSubject = Players.LocalPlayer.Character and Players.LocalPlayer.Character:FindFirstChild("Humanoid")
+    end
+end)
+
+spawn(function()
+    while task.wait() do
+        if followPlayerEnabled and selectedPlayer then
+            local target = Players:FindFirstChild(selectedPlayer)
+            if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
+                local targetRoot = target.Character.HumanoidRootPart
+                local localChar = Players.LocalPlayer.Character
+                if localChar and localChar:FindFirstChild("HumanoidRootPart") then
+                    local offset = CFrame.new(followLateral, followHeight, followDistance)
+                    local targetCFrame = targetRoot.CFrame * offset
+                    localChar:PivotTo(targetCFrame * CFrame.Angles(0, math.rad(targetRoot.Orientation.Y), 0))
+                end
+            end
+        elseif trackPlayerEnabled and selectedPlayer then
+            local target = Players:FindFirstChild(selectedPlayer)
+            if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
+                workspace.CurrentCamera.CameraSubject = target.Character.Humanoid
+            end
+        end
+    end
+end)
+
+-- 2. LocalPlayer Section
+local noclipEnabled = false
+local flyEnabled = false
+local flySpeed = 50 -- Новая переменная для скорости Fly
+local freezeEnabled = false
+local airJumpEnabled = false
+local platformEnabled = false
+local infinityJumpEnabled = false
+local godModeEnabled = false
+local invisibleEnabled = false
+local flashbackEnabled = false
+local currentPlatform = nil
+local unlockCameraEnabled = false -- Для Unlock Camera+
+local flyV2Enabled = false -- Для Fly v2 (Bypass)
+local flyV2Speed = 50 -- Новая переменная для скорости Fly v2
+
+-- Invisible variables
+local IsInvisible = false
+local CanInvis = true
+local Keybind = "E"
+
+-- Flashback variables
+local flashbackKey = "E"
+local flashbackLength = 60
+local flashbackSpeed = 1
+local frames = {}
+local flashback = {lastinput = false, canrevert = true}
+
+-- Unlock Camera+ variables
+local cameraDistance = 10 -- Начальная дистанция камеры
+local maxCameraDistance = 999 -- Максимальная дистанция
+local minCameraDistance = 5 -- Минимальная дистанция
+local cameraStep = 5 -- Шаг изменения дистанции при прокрутке
+
+-- Fly v2 variables
+local flyV2Speed = 50 -- Скорость перемещения для Fly v2
+
+local UIS = game:GetService("UserInputService")
+local RS = game:GetService("RunService")
+local LP = game:GetService("Players").LocalPlayer
+
+-- Инициализация Invisible
+local function InitializeInvisible()
+    local RealCharacter = LP.Character or LP.CharacterAdded:Wait()
+    RealCharacter:WaitForChild("HumanoidRootPart")
+    CanInvis = true
+    IsInvisible = false
+end
+
+-- Обработка смерти для Invisible
+local function OnCharacterDied()
+    CanInvis = false
+    invisibleEnabled = false
+    IsInvisible = false
+    
+    local RealCharacter = LP.Character or LP.CharacterAdded:Wait()
+    RealCharacter:WaitForChild("HumanoidRootPart")
+    for _, part in pairs(RealCharacter:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.Transparency = 0
+        elseif part:IsA("Decal") then
+            part.Transparency = 0
+        end
+    end
+    workspace.CurrentCamera.CameraSubject = RealCharacter.Humanoid
+    CanInvis = true
+end
+
+-- Функция переключения Invisible
+local function ToggleInvisible()
+    if not CanInvis or not LP.Character then return end
+    local RealCharacter = LP.Character
+    if not RealCharacter:FindFirstChild("HumanoidRootPart") then return end
+
+    if not IsInvisible then
+        for _, part in pairs(RealCharacter:GetDescendants()) do
+            if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+                part.Transparency = 1
+            elseif part:IsA("Decal") then
+                part.Transparency = 1
+            end
+        end
+        LP.Character = RealCharacter
+        workspace.CurrentCamera.CameraSubject = RealCharacter.Humanoid
+        IsInvisible = true
+    else
+        for _, part in pairs(RealCharacter:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.Transparency = 0
+            elseif part:IsA("Decal") then
+                part.Transparency = 0
+            end
+        end
+        LP.Character = RealCharacter
+        workspace.CurrentCamera.CameraSubject = RealCharacter.Humanoid
+        IsInvisible = false
+    end
+end
+
+-- UI элементы
+addSlider(tabContents.LocalPlayer, "WalkSpeed", 16, 1000, 16, function(value)
+    local humanoid = LP.Character and LP.Character:FindFirstChild("Humanoid")
+    if humanoid then humanoid.WalkSpeed = value end
+end)
+
+addSlider(tabContents.LocalPlayer, "JumpPower", 50, 1000, 50, function(value)
+    local humanoid = LP.Character and LP.Character:FindFirstChild("Humanoid")
+    if humanoid then humanoid.JumpPower = value end
+end)
+
+addToggle(tabContents.LocalPlayer, "Fly", false, function(value)
+    flyEnabled = value
+    local char = LP.Character
+    local rootPart = char and char:FindFirstChild("HumanoidRootPart")
+    local humanoid = char and char:FindFirstChild("Humanoid")
+    if not rootPart or not humanoid then return end
+    local bg, bv = nil, nil
+    if value then
+        humanoid.PlatformStand = true
+        bg = Instance.new("BodyGyro")
+        bv = Instance.new("BodyVelocity")
+        bg.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
+        bg.P = 9e4
+        bv.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+        bv.Velocity = Vector3.new(0, 0, 0)
+        bg.Parent = rootPart
+        bv.Parent = rootPart
+        spawn(function()
+            while flyEnabled and rootPart do
+                local cam = workspace.CurrentCamera
+                bg.CFrame = cam.CFrame
+                local moveDir = Vector3.new()
+                local speed = 50
+                if UIS:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + cam.CFrame.LookVector end
+                if UIS:IsKeyDown(Enum.KeyCode.S) then moveDir = moveDir - cam.CFrame.LookVector end
+                if UIS:IsKeyDown(Enum.KeyCode.A) then moveDir = moveDir - cam.CFrame.RightVector end
+                if UIS:IsKeyDown(Enum.KeyCode.D) then moveDir = moveDir + cam.CFrame.RightVector end
+                if UIS:IsKeyDown(Enum.KeyCode.Q) then moveDir = moveDir - Vector3.new(0, 1, 0) end
+                if UIS:IsKeyDown(Enum.KeyCode.E) then moveDir = moveDir + Vector3.new(0, 1, 0) end
+                bv.Velocity = moveDir.Unit * speed
+                if moveDir.Magnitude == 0 then bv.Velocity = Vector3.new(0, 0, 0) end
+                task.wait()
+            end
+            humanoid.PlatformStand = false
+            if bg then bg:Destroy() end
+            if bv then bv:Destroy() end
+            if rootPart then rootPart.Velocity = Vector3.new(0, 0, 0) end
+        end)
+    else
+        humanoid.PlatformStand = false
+        if rootPart then rootPart.Velocity = Vector3.new(0, 0, 0) end
+    end
+end)
+
+addSlider(tabContents.LocalPlayer, "Fly Speed", 10, 200, 50, function(value)
+    flySpeed = value -- Обновляем скорость Fly
+end)
+
+addToggle(tabContents.LocalPlayer, "Fly v2 (Bypass)", false, function(value)
+    flyV2Enabled = value
+    local char = LP.Character
+    local rootPart = char and char:FindFirstChild("HumanoidRootPart")
+    local humanoid = char and char:FindFirstChild("Humanoid")
+    if not rootPart or not humanoid then return end
+    local bv = nil
+    if value then
+        humanoid.PlatformStand = true -- Отключаем физику падения
+        bv = Instance.new("BodyVelocity")
+        bv.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+        bv.Velocity = Vector3.new(0, 0, 0)
+        bv.Parent = rootPart
+        spawn(function()
+            while flyV2Enabled and rootPart do
+                local cam = workspace.CurrentCamera
+                local moveDir = Vector3.new()
+                local speed = flyV2Speed
+                -- Движение относительно камеры, как в обычном Fly, но без BodyGyro
+                if UIS:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + cam.CFrame.LookVector end
+                if UIS:IsKeyDown(Enum.KeyCode.S) then moveDir = moveDir - cam.CFrame.LookVector end
+                if UIS:IsKeyDown(Enum.KeyCode.A) then moveDir = moveDir - cam.CFrame.RightVector end
+                if UIS:IsKeyDown(Enum.KeyCode.D) then moveDir = moveDir + cam.CFrame.RightVector end
+                if UIS:IsKeyDown(Enum.KeyCode.Q) then moveDir = moveDir - Vector3.new(0, 1, 0) end
+                if UIS:IsKeyDown(Enum.KeyCode.E) then moveDir = moveDir + Vector3.new(0, 1, 0) end
+                bv.Velocity = moveDir.Unit * speed
+                if moveDir.Magnitude == 0 then bv.Velocity = Vector3.new(0, 0, 0) end
+                task.wait()
+            end
+            humanoid.PlatformStand = false
+            if bv then bv:Destroy() end
+            if rootPart then rootPart.Velocity = Vector3.new(0, 0, 0) end
+        end)
+    else
+        humanoid.PlatformStand = false
+        if bv then bv:Destroy() end
+        if rootPart then rootPart.Velocity = Vector3.new(0, 0, 0) end
+    end
+end)
+
+addSlider(tabContents.LocalPlayer, "Fly v2 Speed", 10, 200, 50, function(value)
+    flyV2Speed = value -- Обновляем скорость Fly v2
+end)
+
+addToggle(tabContents.LocalPlayer, "No Clip", false, function(value)
+    noclipEnabled = value
+end)
+
+addToggle(tabContents.LocalPlayer, "Air Jump", false, function(value)
+    airJumpEnabled = value
+end)
+
+addToggle(tabContents.LocalPlayer, "Platform", false, function(value)
+    platformEnabled = value
+    local char = LP.Character
+    local rootPart = char and char:FindFirstChild("HumanoidRootPart")
+    if not rootPart then return end
+    if not value and currentPlatform then
+        currentPlatform:Destroy()
+        currentPlatform = nil
+    end
+end)
+
+addToggle(tabContents.LocalPlayer, "Infinity Jump", false, function(value)
+    infinityJumpEnabled = value
+end)
+
+addButton(tabContents.LocalPlayer, "Toggle Flashback", function()
+    flashbackEnabled = not flashbackEnabled
+    if not flashbackEnabled then
+        frames = {}
+    end
+    print("Flashback " .. (flashbackEnabled and "Enabled" or "Disabled"))
+end)
+
+addToggle(tabContents.LocalPlayer, "Freeze", false, function(value)
+    freezeEnabled = value
+    local char = LP.Character
+    local rootPart = char and char:FindFirstChild("HumanoidRootPart")
+    if not rootPart then return end
+    rootPart.Anchored = value
+end)
+
+addToggle(tabContents.LocalPlayer, "God Mode", false, function(value)
+    godModeEnabled = value
+    local humanoid = LP.Character and LP.Character:FindFirstChild("Humanoid")
+    if humanoid then
+        if value then
+            humanoid.MaxHealth = math.huge
+            humanoid.Health = math.huge
+        else
+            humanoid.MaxHealth = 100
+            humanoid.Health = 100
+        end
+    end
+end)
+
+addToggle(tabContents.LocalPlayer, "Invisible", false, function(value)
+    invisibleEnabled = value
+    if not value and IsInvisible then
+        ToggleInvisible()
+    end
+end)
+
+addButton(tabContents.LocalPlayer, "Teleport to Mouse", function()
+    local char = LP.Character
+    local rootPart = char and char:FindFirstChild("HumanoidRootPart")
+    if rootPart then
+        local mouse = LP:GetMouse()
+        local hit = mouse.Hit
+        rootPart.CFrame = CFrame.new(hit.Position + Vector3.new(0, 3, 0))
+    end
+end)
+
+addSlider(tabContents.LocalPlayer, "FOV", 70, 120, 70, function(value)
+    workspace.CurrentCamera.FieldOfView = value
+end)
+
+addSlider(tabContents.LocalPlayer, "Gravity", 0, 196.2, 196.2, function(value)
+    workspace.Gravity = value
+end)
+
+addButton(tabContents.LocalPlayer, "Respawn", function()
+    local char = LP.Character
+    if char then char:BreakJoints() end
+end)
+
+addToggle(tabContents.LocalPlayer, "Unlock Camera+", false, function(value)
+    unlockCameraEnabled = value
+    local camera = workspace.CurrentCamera
+    if not value then
+        cameraDistance = 10 -- Сбрасываем дистанцию до стандартной
+        camera.CameraType = Enum.CameraType.Custom -- Возвращаем стандартный тип камеры
+        camera.CameraSubject = LP.Character and LP.Character:FindFirstChild("Humanoid")
+    else
+        camera.CameraType = Enum.CameraType.Custom -- Оставляем оригинальную камеру
+        camera.CameraSubject = LP.Character and LP.Character:FindFirstChild("Humanoid")
+    end
+end)
+
+-- Логика Unlock Camera+
+UIS.InputChanged:Connect(function(input)
+    if unlockCameraEnabled and input.UserInputType == Enum.UserInputType.MouseWheel then
+        local delta = input.Position.Z -- Прокрутка колеса: >0 — вперёд, <0 — назад
+        cameraDistance = math.clamp(cameraDistance - delta * cameraStep, minCameraDistance, maxCameraDistance)
+    end
+end)
+
+RS.RenderStepped:Connect(function()
+    if unlockCameraEnabled then
+        local char = LP.Character
+        local rootPart = char and char:FindFirstChild("HumanoidRootPart")
+        if rootPart then
+            local camera = workspace.CurrentCamera
+            local headOffset = Vector3.new(0, 1.5, 0) -- Смещение для лица
+            local direction = (camera.CFrame.Position - (rootPart.Position + headOffset)).Unit
+            local newPosition = rootPart.Position + headOffset - direction * cameraDistance
+            camera.CFrame = CFrame.new(newPosition, rootPart.Position + headOffset)
+        end
+    end
+end)
+
+-- No Clip Logic
+RS.Stepped:Connect(function()
+    if noclipEnabled then
+        local char = LP.Character
+        if char then
+            for _, part in pairs(char:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.CanCollide = false
+                end
+            end
+        end
+    end
+end)
+
+LP.CharacterAdded:Connect(function(char)
+    if noclipEnabled then
+        task.wait(0.1)
+        for _, part in pairs(char:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.CanCollide = false
+            end
+        end
+    end
+end)
+
+-- Air Jump Logic
+UIS.InputBegan:Connect(function(input)
+    if airJumpEnabled and input.KeyCode == Enum.KeyCode.Space then
+        local humanoid = LP.Character and LP.Character:FindFirstChild("Humanoid")
+        if humanoid then
+            humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+        end
+    end
+end)
+
+-- Infinity Jump Logic
+spawn(function()
+    while task.wait() do
+        if infinityJumpEnabled then
+            local humanoid = LP.Character and LP.Character:FindFirstChild("Humanoid")
+            if humanoid and UIS:IsKeyDown(Enum.KeyCode.Space) then
+                humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+                task.wait(0.1)
+            end
+        end
+    end
+end)
+
+-- Platform Logic
+spawn(function()
+    while task.wait(0.05) do
+        if platformEnabled then
+            local char = LP.Character
+            local rootPart = char and char:FindFirstChild("HumanoidRootPart")
+            if rootPart then
+                local position = rootPart.Position - Vector3.new(0, 3, 0)
+                if not currentPlatform or (currentPlatform.Position - position).Magnitude > 5 then
+                    if currentPlatform then
+                        currentPlatform:Destroy()
+                    end
+                    currentPlatform = Instance.new("Part")
+                    currentPlatform.Size = Vector3.new(40, 0, 40)
+                    currentPlatform.Position = Vector3.new(position.X, position.Y, position.Z)
+                    currentPlatform.Anchored = true
+                    currentPlatform.Transparency = 1
+                    currentPlatform.CanCollide = true
+                    currentPlatform.Parent = workspace
+                end
+            end
+        end
+    end
+end)
+
+-- God Mode Logic
+LP.CharacterAdded:Connect(function(char)
+    if godModeEnabled then
+        local humanoid = char:WaitForChild("Humanoid")
+        humanoid.MaxHealth = math.huge
+        humanoid.Health = math.huge
+    end
+end)
+
+-- Инициализация и события для Invisible
+InitializeInvisible()
+LP.CharacterAdded:Connect(OnCharacterDied)
+LP.CharacterAppearanceLoaded:Connect(OnCharacterDied)
+
+-- Flashback Logic
+local function getChar()
+    if not LP.Character then
+        LP.CharacterAdded:Wait()
+    end
+    return LP.Character
+end
+
+local function getHrp(c)
+    if not c then return nil end
+    return c:FindFirstChild("HumanoidRootPart") or c:FindFirstChild("RootPart") or c:FindFirstChild("PrimaryPart") or
+           c:FindFirstChild("Torso") or c:FindFirstChild("UpperTorso") or c:FindFirstChildWhichIsA("BasePart")
+end
+
+function flashback:Advance(char, hrp, hum, allowinput)
+    if not char or not hrp or not hum then return end
+    if #frames > flashbackLength * 60 then
+        table.remove(frames, 1)
+    end
+    if allowinput and not self.canrevert then
+        self.canrevert = true
+    end
+    if self.lastinput then
+        hum.PlatformStand = false
+        self.lastinput = false
+    end
+    table.insert(frames, {
+        hrp.CFrame,
+        hrp.Velocity,
+        hum:GetState(),
+        hum.PlatformStand,
+        char:FindFirstChildOfClass("Tool")
+    })
+end
+
+function flashback:Revert(char, hrp, hum)
+    if not char or not hrp or not hum then return end
+    local num = #frames
+    if num == 0 or not self.canrevert then
+        self.canrevert = false
+        self:Advance(char, hrp, hum)
+        return
+    end
+    for i = 1, flashbackSpeed do
+        if num > 0 then
+            table.remove(frames, num)
+            num = num - 1
+        end
+    end
+    if num <= 0 then return end
+    self.lastinput = true
+    local lastframe = frames[num]
+    table.remove(frames, num)
+    hrp.CFrame = lastframe[1]
+    hrp.Velocity = -lastframe[2]
+    hum:ChangeState(lastframe[3])
+    hum.PlatformStand = lastframe[4]
+    local currenttool = char:FindFirstChildOfClass("Tool")
+    if lastframe[5] then
+        if not currenttool then
+            hum:EquipTool(lastframe[5])
+        end
+    else
+        hum:UnequipTools()
+    end
+end
+
+spawn(function()
+    while task.wait(0.05) do
+        if not flashbackEnabled then continue end
+        local char = getChar()
+        if not char then continue end
+        local hrp = getHrp(char)
+        local hum = char:FindFirstChildWhichIsA("Humanoid")
+        if not hrp or not hum then continue end
+        if UIS:IsKeyDown(Enum.KeyCode[flashbackKey]) then
+            flashback:Revert(char, hrp, hum)
+        else
+            flashback:Advance(char, hrp, hum, true)
+        end
+    end
+end)
+
+-- 3. Combat Section
+local aimbotEnabled = false
+local aimKey = Enum.KeyCode.E
+local aimPart = "Head"
+
+addToggle(tabContents.Combat, "Enable Aimbot", false, function(value)
+    aimbotEnabled = value
+end)
+
+addDropdown(tabContents.Combat, "Aim Key", {"Q", "E", "R", "T", "F"}, "E", function(value)
+    aimKey = Enum.KeyCode[value]
+end)
+
+addDropdown(tabContents.Combat, "Aim Part", {"Head", "Torso"}, "Head", function(value)
+    aimPart = value
+end)
+
+UIS.InputBegan:Connect(function(input)
+    if aimbotEnabled and input.KeyCode == aimKey then
+        local target = Players:GetPlayers()[math.random(2, #Players:GetPlayers())]
+        if target and target.Character and target.Character:FindFirstChild(aimPart) then
+            local camera = workspace.CurrentCamera
+            camera.CFrame = CFrame.new(camera.CFrame.Position, target.Character[aimPart].Position)
+        end
+    end
+end)
+
+-- 4. Teleport Section
+local selectedTeleportPlayer = nil
+local teleportDropdown = addDropdown(tabContents.Teleport, "Teleport to Player", {}, nil, function(chosenPlayer)
+    selectedTeleportPlayer = chosenPlayer
+end)
+
+addButton(tabContents.Teleport, "Go", function()
+    if selectedTeleportPlayer then
+        local target = Players:FindFirstChild(selectedTeleportPlayer)
+        if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
+            Players.LocalPlayer.Character:PivotTo(target.Character.HumanoidRootPart.CFrame)
+        end
+    end
+end)
+
+addTextbox(tabContents.Teleport, "Teleport to Coordinates (X,Y,Z)", "0,0,0", function(value)
+    local coords = {}
+    for num in value:gmatch("[^,]+") do table.insert(coords, tonumber(num)) end
+    if #coords == 3 then
+        Players.LocalPlayer.Character:PivotTo(CFrame.new(coords[1], coords[2], coords[3]))
+    end
+end)
+
+-- 5. ESP Section
+local espEnabled = false
+local healthESPEnabled = false
+local boxESPEnabled = false
+local infoESPEnabled = false
+local distanceESPEnabled = false
+local boxDrawing = {}
+local healthBillboards = {}
+local infoBillboards = {}
+local distanceBillboards = {}
+
+addToggle(tabContents.ESP, "Player ESP (Names)", false, function(value)
+    espEnabled = value
+    if not value then
+        for _, player in pairs(Players:GetPlayers()) do
+            if player.Character and player.Character:FindFirstChild("Head") then
+                local billboard = player.Character.Head:FindFirstChild("ESP_Name")
+                if billboard then billboard:Destroy() end
+            end
+        end
+    end
+end)
+
+addToggle(tabContents.ESP, "Health ESP", false, function(value)
+    healthESPEnabled = value
+    if not value then
+        for playerName, billboard in pairs(healthBillboards) do
+            if billboard and billboard.Parent then
+                billboard:Destroy()
+                healthBillboards[playerName] = nil
+            end
+        end
+    end
+end)
+
+addToggle(tabContents.ESP, "Box ESP", false, function(value)
+    boxESPEnabled = value
+    if not value then
+        for playerName, drawing in pairs(boxDrawing) do
+            if drawing then
+                drawing:Remove()
+                boxDrawing[playerName] = nil
+            end
+        end
+    end
+end)
+
+addToggle(tabContents.ESP, "Player Info ESP", false, function(value)
+    infoESPEnabled = value
+    if not value then
+        for playerName, billboard in pairs(infoBillboards) do
+            if billboard and billboard.Parent then
+                billboard:Destroy()
+                infoBillboards[playerName] = nil
+            end
+        end
+    end
+end)
+
+addToggle(tabContents.ESP, "Distance ESP", false, function(value)
+    distanceESPEnabled = value
+    if not value then
+        for playerName, billboard in pairs(distanceBillboards) do
+            if billboard and billboard.Parent then
+                billboard:Destroy()
+                distanceBillboards[playerName] = nil
+            end
+        end
+    end
+end)
+
+spawn(function()
+    while task.wait(0.1) do
+        if espEnabled then
+            for _, player in pairs(Players:GetPlayers()) do
+                if player ~= Players.LocalPlayer and player.Character and player.Character:FindFirstChild("Head") then
+                    local head = player.Character.Head
+                    local billboard = head:FindFirstChild("ESP_Name")
+                    if not billboard then
+                        billboard = Instance.new("BillboardGui")
+                        billboard.Name = "ESP_Name"
+                        billboard.Size = UDim2.new(0, 100, 0, 20)
+                        billboard.StudsOffset = Vector3.new(0, 3, 0)
+                        billboard.AlwaysOnTop = true
+                        local text = Instance.new("TextLabel")
+                        text.Size = UDim2.new(1, 0, 1, 0)
+                        text.BackgroundTransparency = 1
+                        text.Text = player.Name
+                        text.TextColor3 = Color3.new(1, 0, 0)
+                        text.TextScaled = true
+                        text.Parent = billboard
+                        billboard.Parent = head
+                    end
+                end
+            end
+        end
+
+        if healthESPEnabled then
+            for _, player in pairs(Players:GetPlayers()) do
+                if player ~= Players.LocalPlayer and player.Character and player.Character:FindFirstChild("Head") and player.Character:FindFirstChild("Humanoid") then
+                    local head = player.Character.Head
+                    local humanoid = player.Character.Humanoid
+                    local billboard = healthBillboards[player.Name]
+                    if not billboard then
+                        billboard = Instance.new("BillboardGui")
+                        billboard.Name = "Health_ESP"
+                        billboard.Size = UDim2.new(0, 100, 0, 20)
+                        billboard.StudsOffset = Vector3.new(0, 5, 0)
+                        billboard.AlwaysOnTop = true
+                        local text = Instance.new("TextLabel")
+                        text.Size = UDim2.new(1, 0, 1, 0)
+                        text.BackgroundTransparency = 1
+                        text.TextColor3 = Color3.new(0, 1, 0)
+                        text.TextScaled = true
+                        text.Parent = billboard
+                        billboard.Parent = head
+                        healthBillboards[player.Name] = billboard
+                    end
+                    billboard.TextLabel.Text = "Health: " .. math.floor(humanoid.Health) .. "/" .. humanoid.MaxHealth
+                elseif healthBillboards[player.Name] then
+                    healthBillboards[player.Name]:Destroy()
+                    healthBillboards[player.Name] = nil
+                end
+            end
+        end
+
+        if boxESPEnabled then
+            for _, player in pairs(Players:GetPlayers()) do
+                if player ~= Players.LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+                    local rootPart = player.Character.HumanoidRootPart
+                    local box = boxDrawing[player.Name]
+                    local min, max = rootPart.Position - rootPart.Size/2, rootPart.Position + rootPart.Size/2
+                    local pos, size = workspace.CurrentCamera:WorldToViewportPoint(min), workspace.CurrentCamera:WorldToViewportPoint(max)
+                    if not box then
+                        box = Drawing.new("Square")
+                        box.Thickness = 1
+                        box.Color = Color3.fromRGB(0, 0, 255)
+                        box.Filled = false
+                        box.Visible = true
+                        boxDrawing[player.Name] = box
+                    end
+                    if pos and size then
+                        box.Position = Vector2.new(pos.X, pos.Y)
+                        box.Size = Vector2.new(size.X - pos.X, size.Y - pos.Y)
+                        box.Visible = true
+                    else
+                        box.Visible = false
+                    end
+                elseif boxDrawing[player.Name] then
+                    boxDrawing[player.Name]:Remove()
+                    boxDrawing[player.Name] = nil
+                end
+            end
+        end
+
+if infoESPEnabled then
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= Players.LocalPlayer and player.Character and player.Character:FindFirstChild("Head") then
+            local head = player.Character.Head
+            local humanoid = player.Character:FindFirstChild("Humanoid")
+            local rootPart = player.Character:FindFirstChild("HumanoidRootPart")
+            local billboard = infoBillboards[player.Name]
+            if not billboard then
+                billboard = Instance.new("BillboardGui")
+                billboard.Name = "Info_ESP"
+                billboard.Size = UDim2.new(0, 250, 0, 120)
+                billboard.StudsOffset = Vector3.new(0, 7, 0)
+                billboard.AlwaysOnTop = true
+                local text = Instance.new("TextLabel")
+                text.Size = UDim2.new(1, 0, 1, 0)
+                text.BackgroundTransparency = 1
+                text.TextColor3 = Color3.new(1, 1, 0)
+                text.TextScaled = true
+                text.TextWrapped = true
+                text.Parent = billboard
+                billboard.Parent = head
+                infoBillboards[player.Name] = billboard
+            end
+            local accountAge = player.AccountAge or 0 -- Default to 0 if nil
+            local displayName = player.DisplayName or player.Name
+            local team = player.Team and player.Team.Name or "No Team"
+            local membership = tostring(player.MembershipType) or "None"
+            local followUserId = player.FollowUserId or 0 -- Default to 0 if nil
+            local distance = "N/A"
+            if rootPart and Players.LocalPlayer.Character and Players.LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                distance = tostring(math.floor((rootPart.Position - Players.LocalPlayer.Character.HumanoidRootPart.Position).Magnitude))
+            end
+            local healthInfo = "N/A"
+            if humanoid then
+                healthInfo = math.floor(humanoid.Health) .. "/" .. humanoid.MaxHealth
+            end
+            billboard.TextLabel.Text = string.format(
+                "Name: %s\nDisplay: %s\nUserId: %d\nAge: %d days\nTeam: %s\nMembership: %s\nFollowing: %d\nDistance: %s studs\nHealth: %s",
+                player.Name or "Unknown",
+                displayName,
+                player.UserId or 0,
+                accountAge,
+                team,
+                membership,
+                followUserId,
+                distance,
+                healthInfo
+            )
+        elseif infoBillboards[player.Name] then
+            infoBillboards[player.Name]:Destroy()
+            infoBillboards[player.Name] = nil
+        end
+    end
+end
+
+        if distanceESPEnabled then
+            for _, player in pairs(Players:GetPlayers()) do
+                if player ~= Players.LocalPlayer and player.Character and player.Character:FindFirstChild("Head") then
+                    local head = player.Character.Head
+                    local rootPart = player.Character:FindFirstChild("HumanoidRootPart")
+                    local billboard = distanceBillboards[player.Name]
+                    if not billboard then
+                        billboard = Instance.new("BillboardGui")
+                        billboard.Name = "Distance_ESP"
+                        billboard.Size = UDim2.new(0, 100, 0, 20)
+                        billboard.StudsOffset = Vector3.new(0, 6, 0)
+                        billboard.AlwaysOnTop = true
+                        local text = Instance.new("TextLabel")
+                        text.Size = UDim2.new(1, 0, 1, 0)
+                        text.BackgroundTransparency = 1
+                        text.TextColor3 = Color3.new(0, 1, 1)
+                        text.TextScaled = true
+                        text.Parent = billboard
+                        billboard.Parent = head
+                        distanceBillboards[player.Name] = billboard
+                    end
+                    local distance = "N/A"
+                    if rootPart and Players.LocalPlayer.Character and Players.LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                        distance = math.floor((rootPart.Position - Players.LocalPlayer.Character.HumanoidRootPart.Position).Magnitude)
+                    end
+                    billboard.TextLabel.Text = "Distance: " .. distance .. " studs"
+                elseif distanceBillboards[player.Name] then
+                    distanceBillboards[player.Name]:Destroy()
+                    distanceBillboards[player.Name] = nil
+                end
+            end
+        end
+    end
+end)
+
+-- 6. Visuals Section
+addToggle(tabContents.Visuals, "Fullbright", false, function(value)
+    if value then
+        game.Lighting.Brightness = 2
+        game.Lighting.ClockTime = 14
+        game.Lighting.FogEnd = 1000
+    else
+        game.Lighting.Brightness = 1
+        game.Lighting.ClockTime = 12
+        game.Lighting.FogEnd = 500
+    end
+end)
+
+addSlider(tabContents.Visuals, "Time of Day", 0, 24, 12, function(value)
+    game.Lighting.ClockTime = value
+end)
+
+addButton(tabContents.Visuals, "Remove Fog", function()
+    game.Lighting.FogEnd = 100000
+end)
+
+-- 7. Animations Section
+local animationIds = {
+    Dance = "rbxassetid://507771019",
+    Laugh = "rbxassetid://507770239",
+    Wave = "rbxassetid://507770453",
+    Point = "rbxassetid://507770818",
+    Default = { -- Стандартные анимации Roblox (R15)
+        idle1 = "http://www.roblox.com/asset/?id=507766666",
+        idle2 = "http://www.roblox.com/asset/?id=507766951",
+        walk = "http://www.roblox.com/asset/?id=507777826",
+        run = "http://www.roblox.com/asset/?id=507767714",
+        jump = "http://www.roblox.com/asset/?id=507765000",
+        climb = "http://www.roblox.com/asset/?id=507765644",
+        fall = "http://www.roblox.com/asset/?id=507767968"
+    },
+    Astronaut = { idle1 = "http://www.roblox.com/asset/?id=891621366", idle2 = "http://www.roblox.com/asset/?id=891633237", walk = "http://www.roblox.com/asset/?id=891667138", run = "http://www.roblox.com/asset/?id=891636393", jump = "http://www.roblox.com/asset/?id=891627522", climb = "http://www.roblox.com/asset/?id=891609353", fall = "http://www.roblox.com/asset/?id=891617961" },
+    Bubbly = { idle1 = "http://www.roblox.com/asset/?id=910004836", idle2 = "http://www.roblox.com/asset/?id=910009958", walk = "http://www.roblox.com/asset/?id=910034870", run = "http://www.roblox.com/asset/?id=910025107", jump = "http://www.roblox.com/asset/?id=910016857", climb = "", fall = "http://www.roblox.com/asset/?id=910001910", swimidle = "http://www.roblox.com/asset/?id=910030921", swim = "http://www.roblox.com/asset/?id=910028158" },
+    Cartoony = { idle1 = "http://www.roblox.com/asset/?id=742637544", idle2 = "http://www.roblox.com/asset/?id=742638445", walk = "http://www.roblox.com/asset/?id=742640026", run = "http://www.roblox.com/asset/?id=742638842", jump = "http://www.roblox.com/asset/?id=742637942", climb = "http://www.roblox.com/asset/?id=742636889", fall = "http://www.roblox.com/asset/?id=742637151" },
+    Elder = { idle1 = "http://www.roblox.com/asset/?id=845397899", idle2 = "http://www.roblox.com/asset/?id=845400520", walk = "http://www.roblox.com/asset/?id=845403856", run = "http://www.roblox.com/asset/?id=845386501", jump = "http://www.roblox.com/asset/?id=845398858", climb = "http://www.roblox.com/asset/?id=845392038", fall = "http://www.roblox.com/asset/?id=845396048" },
+    Knight = { idle1 = "http://www.roblox.com/asset/?id=657595757", idle2 = "http://www.roblox.com/asset/?id=657568135", walk = "http://www.roblox.com/asset/?id=657552124", run = "http://www.roblox.com/asset/?id=657564596", jump = "http://www.roblox.com/asset/?id=658409194", climb = "http://www.roblox.com/asset/?id=658360781", fall = "http://www.roblox.com/asset/?id=657600338" },
+    Levitation = { idle1 = "http://www.roblox.com/asset/?id=616006778", idle2 = "http://www.roblox.com/asset/?id=616008087", walk = "http://www.roblox.com/asset/?id=616013216", run = "http://www.roblox.com/asset/?id=616010382", jump = "http://www.roblox.com/asset/?id=616008936", climb = "http://www.roblox.com/asset/?id=616003713", fall = "http://www.roblox.com/asset/?id=616005863" },
+    Mage = { idle1 = "http://www.roblox.com/asset/?id=707742142", idle2 = "http://www.roblox.com/asset/?id=707855907", walk = "http://www.roblox.com/asset/?id=707897309", run = "http://www.roblox.com/asset/?id=707861613", jump = "http://www.roblox.com/asset/?id=707853694", climb = "http://www.roblox.com/asset/?id=707826056", fall = "http://www.roblox.com/asset/?id=707829716" },
+    Ninja = { idle1 = "http://www.roblox.com/asset/?id=656117400", idle2 = "http://www.roblox.com/asset/?id=656118341", walk = "http://www.roblox.com/asset/?id=656121766", run = "http://www.roblox.com/asset/?id=656118852", jump = "http://www.roblox.com/asset/?id=656117878", climb = "http://www.roblox.com/asset/?id=656114359", fall = "http://www.roblox.com/asset/?id=656115606" },
+    Pirate = { idle1 = "http://www.roblox.com/asset/?id=750781874", idle2 = "http://www.roblox.com/asset/?id=750782770", walk = "http://www.roblox.com/asset/?id=750785693", run = "http://www.roblox.com/asset/?id=750783738", jump = "http://www.roblox.com/asset/?id=750782230", climb = "http://www.roblox.com/asset/?id=750779899", fall = "http://www.roblox.com/asset/?id=750780242" },
+    Robot = { idle1 = "http://www.roblox.com/asset/?id=616088211", idle2 = "http://www.roblox.com/asset/?id=616089559", walk = "http://www.roblox.com/asset/?id=616095330", run = "http://www.roblox.com/asset/?id=616091570", jump = "http://www.roblox.com/asset/?id=616090535", climb = "http://www.roblox.com/asset/?id=616086039", fall = "http://www.roblox.com/asset/?id=616087089" },
+    Stylish = { idle1 = "http://www.roblox.com/asset/?id=616136790", idle2 = "http://www.roblox.com/asset/?id=616138447", walk = "http://www.roblox.com/asset/?id=616146177", run = "http://www.roblox.com/asset/?id=616140816", jump = "http://www.roblox.com/asset/?id=616139451", climb = "http://www.roblox.com/asset/?id=616133594", fall = "http://www.roblox.com/asset/?id=616134815" },
+    SuperHero = { idle1 = "http://www.roblox.com/asset/?id=616111295", idle2 = "http://www.roblox.com/asset/?id=616113536", walk = "http://www.roblox.com/asset/?id=616122287", run = "http://www.roblox.com/asset/?id=616117076", jump = "http://www.roblox.com/asset/?id=616115533", climb = "http://www.roblox.com/asset/?id=616104706", fall = "http://www.roblox.com/asset/?id=616108001" },
+    Toy = { idle1 = "http://www.roblox.com/asset/?id=782841498", idle2 = "http://www.roblox.com/asset/?id=782845736", walk = "http://www.roblox.com/asset/?id=782843345", run = "http://www.roblox.com/asset/?id=782842708", jump = "http://www.roblox.com/asset/?id=782847020", climb = "http://www.roblox.com/asset/?id=782843869", fall = "http://www.roblox.com/asset/?id=782846423" },
+    Vampire = { idle1 = "http://www.roblox.com/asset/?id=1083445855", idle2 = "http://www.roblox.com/asset/?id=1083450166", walk = "http://www.roblox.com/asset/?id=1083473930", run = "http://www.roblox.com/asset/?id=1083462077", jump = "http://www.roblox.com/asset/?id=1083455352", climb = "http://www.roblox.com/asset/?id=1083439238", fall = "http://www.roblox.com/asset/?id=1083443587" },
+    Werewolf = { idle1 = "http://www.roblox.com/asset/?id=1083195517", idle2 = "http://www.roblox.com/asset/?id=1083214717", walk = "http://www.roblox.com/asset/?id=1083178339", run = "http://www.roblox.com/asset/?id=1083216690", jump = "http://www.roblox.com/asset/?id=1083218792", climb = "http://www.roblox.com/asset/?id=1083182000", fall = "http://www.roblox.com/asset/?id=1083189019" },
+    Zombie = { idle1 = "http://www.roblox.com/asset/?id=616158929", idle2 = "http://www.roblox.com/asset/?id=616160636", walk = "http://www.roblox.com/asset/?id=616168032", run = "http://www.roblox.com/asset/?id=616163682", jump = "http://www.roblox.com/asset/?id=616161997", climb = "http://www.roblox.com/asset/?id=616156119", fall = "http://www.roblox.com/asset/?id=616157476" },
+    Patrol = { idle1 = "http://www.roblox.com/asset/?id=1149612882", idle2 = "http://www.roblox.com/asset/?id=1150842221", walk = "http://www.roblox.com/asset/?id=1151231493", run = "http://www.roblox.com/asset/?id=1150967949", jump = "http://www.roblox.com/asset/?id=1148811837", climb = "http://www.roblox.com/asset/?id=1148811837", fall = "http://www.roblox.com/asset/?id=1148863382" },
+    Confident = { idle1 = "http://www.roblox.com/asset/?id=1069977950", idle2 = "http://www.roblox.com/asset/?id=1069987858", walk = "http://www.roblox.com/asset/?id=1070017263", run = "http://www.roblox.com/asset/?id=1070001516", jump = "http://www.roblox.com/asset/?id=1069984524", climb = "http://www.roblox.com/asset/?id=1069946257", fall = "http://www.roblox.com/asset/?id=1069973677" },
+    Popstar = { idle1 = "http://www.roblox.com/asset/?id=1212900985", idle2 = "http://www.roblox.com/asset/?id=1150842221", walk = "http://www.roblox.com/asset/?id=1212980338", run = "http://www.roblox.com/asset/?id=1212980348", jump = "http://www.roblox.com/asset/?id=1212954642", climb = "http://www.roblox.com/asset/?id=1213044953", fall = "http://www.roblox.com/asset/?id=1212900995" },
+    Cowboy = { idle1 = "http://www.roblox.com/asset/?id=1014390418", idle2 = "http://www.roblox.com/asset/?id=1014398616", walk = "http://www.roblox.com/asset/?id=1014421541", run = "http://www.roblox.com/asset/?id=1014401683", jump = "http://www.roblox.com/asset/?id=1014394726", climb = "http://www.roblox.com/asset/?id=1014380606", fall = "http://www.roblox.com/asset/?id=1014384571" },
+    Ghost = { idle1 = "http://www.roblox.com/asset/?id=616006778", idle2 = "http://www.roblox.com/asset/?id=616008087", walk = "http://www.roblox.com/asset/?id=616013216", run = "http://www.roblox.com/asset/?id=616013216", jump = "http://www.roblox.com/asset/?id=616008936", fall = "http://www.roblox.com/asset/?id=616005863", swimidle = "http://www.roblox.com/asset/?id=616012453", swim = "http://www.roblox.com/asset/?id=616011509" },
+    Sneaky = { idle1 = "http://www.roblox.com/asset/?id=1132473842", idle2 = "http://www.roblox.com/asset/?id=1132477671", walk = "http://www.roblox.com/asset/?id=1132510133", run = "http://www.roblox.com/asset/?id=1132494274", jump = "http://www.roblox.com/asset/?id=1132489853", climb = "http://www.roblox.com/asset/?id=1132461372", fall = "http://www.roblox.com/asset/?id=1132469004" },
+    Princess = { idle1 = "http://www.roblox.com/asset/?id=941003647", idle2 = "http://www.roblox.com/asset/?id=941013098", walk = "http://www.roblox.com/asset/?id=941028902", run = "http://www.roblox.com/asset/?id=941015281", jump = "http://www.roblox.com/asset/?id=941008832", climb = "http://www.roblox.com/asset/?id=940996062", fall = "http://www.roblox.com/asset/?id=941000007" },
+    Anthro = { idle1 = "http://www.roblox.com/asset/?id=2510196951", idle2 = "http://www.roblox.com/asset/?id=2510197257", walk = "http://www.roblox.com/asset/?id=2510202577", run = "http://www.roblox.com/asset/?id=2510198475", jump = "http://www.roblox.com/asset/?id=2510197830", climb = "http://www.roblox.com/asset/?id=2510192778", fall = "http://www.roblox.com/asset/?id=2510195892" }
+}
+local currentAnims = {}
+local animationOptions = {
+    "Dance", "Laugh", "Wave", "Point", "Default", "Astronaut", "Bubbly", "Cartoony", "Elder", "Knight",
+    "Levitation", "Mage", "Ninja", "Pirate", "Robot", "Stylish", "SuperHero", "Toy", "Vampire", "Werewolf",
+    "Zombie", "Patrol", "Confident", "Popstar", "Cowboy", "Ghost", "Sneaky", "Princess", "Anthro"
+}
+
+local animDropdown = addDropdown(tabContents.Animations, "Play Animation Set", animationOptions, nil, function(value)
+    local humanoid = Players.LocalPlayer.Character and Players.LocalPlayer.Character:FindFirstChild("Humanoid")
+    local animate = Players.LocalPlayer.Character and Players.LocalPlayer.Character:FindFirstChild("Animate")
+    if humanoid and animate then
+        -- Останавливаем все текущие одиночные анимации
+        for _, anim in pairs(currentAnims) do
+            anim:Stop()
+        end
+        currentAnims = {}
+
+        if type(animationIds[value]) == "string" then
+            -- Одиночные анимации (Dance, Laugh, Wave, Point)
+            local anim = Instance.new("Animation")
+            anim.AnimationId = animationIds[value]
+            currentAnims[value] = humanoid:LoadAnimation(anim)
+            currentAnims[value]:Play()
+        else
+            -- Полные наборы анимаций (включая Default)
+            animate.idle.Animation1.AnimationId = animationIds[value].idle1
+            animate.idle.Animation2.AnimationId = animationIds[value].idle2
+            animate.walk.WalkAnim.AnimationId = animationIds[value].walk
+            animate.run.RunAnim.AnimationId = animationIds[value].run
+            animate.jump.JumpAnim.AnimationId = animationIds[value].jump
+            animate.climb.ClimbAnim.AnimationId = animationIds[value].climb or ""
+            animate.fall.FallAnim.AnimationId = animationIds[value].fall
+            if animationIds[value].swimidle then
+                animate.swimidle.SwimIdle.AnimationId = animationIds[value].swimidle
+            end
+            if animationIds[value].swim then
+                animate.swim.Swim.AnimationId = animationIds[value].swim
+            end
+            humanoid.Jump = true
+            task.wait(0.1)
+            humanoid.Jump = false
+        end
+    end
+end)
+
+addTextbox(tabContents.Animations, "Custom Animation ID", "rbxassetid://", function(value)
+    local humanoid = Players.LocalPlayer.Character and Players.LocalPlayer.Character:FindFirstChild("Humanoid")
+    if humanoid then
+        for _, anim in pairs(currentAnims) do anim:Stop() end
+        local anim = Instance.new("Animation")
+        anim.AnimationId = value
+        currentAnims[value] = humanoid:LoadAnimation(anim)
+        currentAnims[value]:Play()
+    end
+end)
+
+addButton(tabContents.Animations, "Stop All Animations", function()
+    for _, anim in pairs(currentAnims) do anim:Stop() end
+    currentAnims = {}
+end)
+
+addTextbox(tabContents.Animations, "Auto Find Range (Start-End)", "507771019-507771100", function(value)
+    local startId, endId = value:match("(%d+)-(%d+)")
+    startId, endId = tonumber(startId), tonumber(endId)
+    if startId and endId then
+        addButton(tabContents.Animations, "Find Animations (" .. startId .. " to " .. endId .. ")", function()
+            local humanoid = Players.LocalPlayer.Character and Players.LocalPlayer.Character:FindFirstChild("Humanoid")
+            if humanoid then
+                for id = startId, endId do
+                    local anim = Instance.new("Animation")
+                    anim.AnimationId = "rbxassetid://" .. id
+                    local track = humanoid:LoadAnimation(anim)
+                    track:Play()
+                    task.wait(0.5)
+                    track:Stop()
+                    if track.Length > 0 then
+                        local animName = "Found_" .. id
+                        animationIds[animName] = "rbxassetid://" .. id
+                        table.insert(animationOptions, animName)
+                        animDropdown.update(animationOptions)
+                    end
+                end
+            end
+        end)
+    end
+end)
+
+-- 8. Bypass Section (Исправлено для избежания Ragdoll и ошибок)
+local LP = game:GetService("Players").LocalPlayer
+local RS = game:GetService("ReplicatedStorage")
+local VU = game:GetService("VirtualUser")
+
+-- Script 1: Anti-AFK (Безопасная версия)
+local antiAfkActive = false
+addToggle(tabContents.Bypass, "Anti-AFK", false, function(value)
+    antiAfkActive = value
+    if value then
+        spawn(function()
+            while antiAfkActive and task.wait(math.random(30, 60)) do
+                VU:CaptureController()
+                VU:ClickButton1(Vector2.new(math.random(0, 100), math.random(0, 100)))
+                print("Anti-AFK: Simulated activity")
+            end
+        end)
+        print("Anti-AFK activated!")
+    else
+        print("Anti-AFK deactivated!")
+    end
+end)
+
+local RunService = game:GetService("RunService")
+local Lighting = game:GetService("Lighting")
+local Workspace = game:GetService("Workspace")
+
+-- Функция для плавной оптимизации графики
+local function optimizeGraphics(settings)
+    task.spawn(function()
+        pcall(function()
+            Lighting.GlobalShadows = settings.shadows
+            Lighting.FogEnd = settings.fogEnd
+            Lighting.Brightness = settings.brightness
+            Lighting.ClockTime = settings.clockTime
+        end)
+
+        local descendants = Workspace:GetDescendants()
+        local batchSize = 100
+        for i = 1, #descendants, batchSize do
+            for j = i, math.min(i + batchSize - 1, #descendants) do
+                local obj = descendants[j]
+                pcall(function()
+                    if obj:IsA("BasePart") then
+                        obj.Material = settings.material
+                        obj.CastShadow = false
+                    elseif obj:IsA("ParticleEmitter") or obj:IsA("Trail") then
+                        obj.Enabled = false
+                    elseif obj:IsA("Decal") and settings.decalTransparency then
+                        obj.Transparency = settings.decalTransparency
+                    end
+                end)
+            end
+            task.wait(0.01)
+        end
+
+        for _, effect in pairs(Lighting:GetChildren()) do
+            if effect:IsA("PostEffect") then
+                pcall(function()
+                    effect.Enabled = false
+                end)
+            end
+        end
+    end)
+end
+
+-- Unlock FPS (PC) - Без автоклика и дёрганий
+addButton(tabContents.Bypass, "Unlock FPS (PC)", function()
+    if setfpscap then
+        setfpscap(999)
+        print("FPS cap set to 999 for PC!")
+    else
+        print("Warning: setfpscap not supported. Applying PC optimizations.")
+    end
+
+    local pcSettings = {
+        shadows = false,
+        fogEnd = 100000,
+        brightness = 2,
+        clockTime = 14,
+        material = Enum.Material.SmoothPlastic,
+        decalTransparency = nil
+    }
+
+    optimizeGraphics(pcSettings)
+
+    -- Дополнительная оптимизация рендера без сетевых запросов
+    task.spawn(function()
+        Workspace.StreamingEnabled = false -- Отключаем стриминг для скорости
+        Workspace.Terrain.WaterWaveSize = 0
+        Workspace.Terrain.WaterReflectance = 0
+        RunService:Set3dRenderingEnabled(true) -- Убеждаемся, что рендер активен
+    end)
+end)
+
+-- Unlock FPS (Mobile) - Оставляем как есть
+addButton(tabContents.Bypass, "Unlock FPS (Mobile)", function()
+    if setfpscap then
+        setfpscap(999)
+    else
+    end
+
+    local mobileSettings = {
+        shadows = false,
+        fogEnd = 5000,
+        brightness = 1.5,
+        clockTime = 12,
+        material = Enum.Material.Plastic,
+        decalTransparency = 0.5
+    }
+
+    optimizeGraphics(mobileSettings)
+
+    task.spawn(function()
+        local camera = Workspace.CurrentCamera
+        camera.FieldOfView = 70
+        Workspace.StreamingEnabled = true
+        Workspace.Terrain.WaterWaveSize = 0
+        Workspace.Terrain.WaterReflectance = 0
+    end)
+end)
+
+-- Script 3: Anti-Kick (Улучшено, без конфликтов)
+local antiKickActive = false
+addToggle(tabContents.Bypass, "Anti-Kick", false, function(value)
+    antiKickActive = value
+    if value then
+        spawn(function()
+            while antiKickActive and task.wait(math.random(5, 10)) do
+                VU:CaptureController()
+                for _, v in pairs(RS:GetDescendants()) do
+                    if v:IsA("RemoteEvent") and v.Name:match("Input") then
+                        v:FireServer("SimulatedMove", {Time = tick()})
+                        break
+                    end
+                end
+                print("Anti-Kick: Preventing kick attempt")
+            end
+        end)
+        print("Anti-Kick activated!")
+    else
+        print("Anti-Kick deactivated!")
+    end
+end)
+
+-- Script 4: Anti-Display (Hide Name) - Безопасная версия
+local antiDisplayActive = false
+addToggle(tabContents.Bypass, "Anti-Display (Hide My Name Online)", false, function(value)
+    antiDisplayActive = value
+
+    -- Функция ожидания персонажа
+    local function waitForCharacter()
+        local char = LP.Character
+        if not char then
+            char = LP.CharacterAdded:Wait()
+        end
+        return char
+    end
+
+    -- Инициализация персонажа
+    local char = waitForCharacter()
+    if not char then
+        print("Anti-Display failed: Unable to load character!")
+        antiDisplayActive = false
+        return
+    end
+
+    local humanoid = char:FindFirstChild("Humanoid")
+    local head = char:FindFirstChild("Head")
+    if not (humanoid and head) then
+        print("Anti-Display failed: Humanoid or Head not found!")
+        antiDisplayActive = false
+        return
+    end
+
+    -- Функция удаления BillboardGui
+    local function removeNameGui(targetHead)
+        if targetHead and targetHead.Parent then
+            for _, gui in pairs(targetHead:GetChildren()) do
+                if gui:IsA("BillboardGui") then
+                    pcall(function()
+                        gui:Destroy()
+                    end)
+                end
+            end
+        end
+    end
+
+    if value then
+        -- Шаг 1: Локально скрываем имя
+        pcall(function()
+            humanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+            humanoid.NameDisplayDistance = 0
+        end)
+        removeNameGui(head)
+
+        -- Шаг 2: Цикл для обхода и маскировки
+        spawn(function()
+            while antiDisplayActive do
+                if char and char.Parent and head and head.Parent and humanoid and humanoid.Parent then
+                    removeNameGui(head)
+                    -- Маскировка активности
+                    pcall(function()
+                        VU:CaptureController()
+                        VU:ClickButton1(Vector2.new(math.random(0, 100), math.random(0, 100)))
+                    end)
+                    -- Спуфинг серверных данных
+                    for _, v in pairs(RS:GetDescendants()) do
+                        if v:IsA("RemoteEvent") then
+                            pcall(function()
+                                -- Пробуем разные варианты спуфинга
+                                v:FireServer("UpdateName", "")
+                                v:FireServer("SetName", "")
+                                v:FireServer("PlayerData", {Name = ""})
+                                if char:FindFirstChild("HumanoidRootPart") then
+                                    v:FireServer("UpdatePosition", char.HumanoidRootPart.Position)
+                                end
+                            end)
+                        end
+                    end
+                else
+                    -- Ждём нового персонажа, если текущий пропал
+                    char = waitForCharacter()
+                    if char then
+                        head = char:FindFirstChild("Head")
+                        humanoid = char:FindFirstChild("Humanoid")
+                        if humanoid and head then
+                            pcall(function()
+                                humanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+                                humanoid.NameDisplayDistance = 0
+                            end)
+                            removeNameGui(head)
+                        end
+                    end
+                end
+                task.wait(0.2) -- Увеличенная задержка для стабильности
+            end
+        end)
+
+        -- Шаг 3: Обработка респавна
+        LP.CharacterAdded:Connect(function(newChar)
+            if antiDisplayActive then
+                char = newChar
+                head = newChar:WaitForChild("Head", 5)
+                humanoid = newChar:WaitForChild("Humanoid", 5)
+                if head and humanoid then
+                    pcall(function()
+                        humanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+                        humanoid.NameDisplayDistance = 0
+                    end)
+                    removeNameGui(head)
+                end
+            end
+        end)
+
+        print("Anti-Display activated! Hiding name across all games.")
+    else
+        -- Восстановление с защитой от ошибок
+        if humanoid and humanoid.Parent then
+            pcall(function()
+                humanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.Viewer
+                humanoid.NameDisplayDistance = 100
+            end)
+        end
+        if head and head.Parent then
+            pcall(function()
+                local billboard = Instance.new("BillboardGui")
+                billboard.Name = "NameTag"
+                billboard.Size = UDim2.new(0, 100, 0, 20)
+                billboard.StudsOffset = Vector3.new(0, 2, 0)
+                billboard.Parent = head
+                local label = Instance.new("TextLabel")
+                label.Size = UDim2.new(1, 0, 1, 0)
+                label.Text = LP.Name
+                label.TextColor3 = Color3.new(1, 1, 1)
+                label.BackgroundTransparency = 1
+                label.Parent = billboard
+            end)
+        end
+
+        -- Восстановление на сервере
+        for _, v in pairs(RS:GetDescendants()) do
+            if v:IsA("RemoteEvent") then
+                pcall(function()
+                    v:FireServer("UpdateName", LP.Name)
+                    v:FireServer("SetName", LP.Name)
+                    v:FireServer("PlayerData", {Name = LP.Name})
+                end)
+            end
+        end
+
+        print("Anti-Display deactivated! Name restored.")
+    end
+end)
+
+-- Script 5: Anti-Teleport Reset (Безопасно для Ragdoll)
+local antiTeleportActive = false
+addToggle(tabContents.Bypass, "Anti-Teleport Reset", false, function(value)
+    antiTeleportActive = value
+    local char = LP.Character
+    if char and char:FindFirstChild("HumanoidRootPart") then
+        local root = char.HumanoidRootPart
+        local lastPos = root.CFrame
+        if value then
+            spawn(function()
+                while antiTeleportActive and char and root and task.wait(0.1) do
+                    if (root.CFrame.p - lastPos.p).Magnitude < 10 then
+                        lastPos = root.CFrame
+                    elseif (root.CFrame.p - lastPos.p).Magnitude > 10 then
+                        root.CFrame = lastPos
+                    end
+                end
+            end)
+            print("Anti-Teleport Reset activated!")
+        else
+            print("Anti-Teleport Reset deactivated!")
+        end
+    else
+        print("Anti-Teleport Reset failed: Character not found!")
+    end
+end)
+
+-- Script 6: Server-Side Mask (Исправлено, без спама)
+local serverSideMaskActive = false
+addToggle(tabContents.Bypass, "Server-Side Mask", false, function(value)
+    serverSideMaskActive = value
+    if value then
+        spawn(function()
+            while serverSideMaskActive and task.wait(math.random(5, 10)) do
+                local char = LP.Character
+                if char and char:FindFirstChild("HumanoidRootPart") then
+                    local fakeData = {
+                        Action = "Move",
+                        Position = char.HumanoidRootPart.Position,
+                        Time = tick()
+                    }
+                    for _, v in pairs(RS:GetDescendants()) do
+                        if v:IsA("RemoteEvent") and v.Name:match("Update") then
+                            v:FireServer("LegitUpdate", fakeData)
+                            break
+                        end
+                    end
+                end
+            end
+        end)
+        print("Server-Side Mask activated!")
+    else
+        print("Server-Side Mask deactivated!")
+    end
+end)
+
+-- Script 7: Client-Side Mask (Исправлено, без Ragdoll)
+local clientSideMaskActive = false
+addToggle(tabContents.Bypass, "Client-Side Mask", false, function(value)
+    clientSideMaskActive = value
+    local char = LP.Character
+    if char and char:FindFirstChild("Humanoid") then
+        local humanoid = char.Humanoid
+        if value then
+            spawn(function()
+                while clientSideMaskActive and char and humanoid and task.wait(math.random(3, 7)) do
+                    VU:CaptureController()
+                    -- Убрано ChangeState, чтобы избежать Ragdoll
+                    humanoid.WalkSpeed = humanoid.WalkSpeed
+                end
+            end)
+            print("Client-Side Mask activated!")
+        else
+        print("Client-Side Mask deactivated!")
+        end
+    else
+        print("Client-Side Mask failed: Character not found!")
+    end
+end)
+
+-- Script 8: Anti-Ban Mask (Упрощено)
+local antiBanMaskActive = false
+addToggle(tabContents.Bypass, "Anti-Ban Mask", false, function(value)
+    antiBanMaskActive = value
+    if value then
+        spawn(function()
+            while antiBanMaskActive and task.wait(math.random(10, 20)) do
+                VU:CaptureController()
+                print("Anti-Ban Mask: Running")
+            end
+        end)
+        print("Anti-Ban Mask activated!")
+    else
+        print("Anti-Ban Mask deactivated!")
+    end
+end)
+
+-- Script 9: Anti-Health Drop (Безопасно для Ragdoll)
+local antiHealthActive = false
+addToggle(tabContents.Bypass, "Anti-Health Drop", false, function(value)
+    antiHealthActive = value
+    local char = LP.Character
+    if char and char:FindFirstChild("Humanoid") then
+        local humanoid = char.Humanoid
+        if value then
+            local maxHealth = humanoid.MaxHealth
+            humanoid.HealthChanged:Connect(function(health)
+                if antiHealthActive and health < maxHealth then
+                    humanoid.Health = maxHealth
+                end
+            end)
+            print("Anti-Health Drop activated!")
+        else
+            print("Anti-Health Drop deactivated!")
+        end
+    end
+end)
+
+-- Script 10: Speed Mask (Исправлено)
+local speedMaskActive = false
+addToggle(tabContents.Bypass, "Speed Mask", false, function(value)
+    speedMaskActive = value
+    local char = LP.Character
+    if char and char:FindFirstChild("Humanoid") and char:FindFirstChild("HumanoidRootPart") then
+        local humanoid = char.Humanoid
+        local root = char.HumanoidRootPart
+        if value then
+            humanoid.WalkSpeed = 16
+            spawn(function()
+                while speedMaskActive and char and root and task.wait(0.01) do
+                    local moveDir = humanoid.MoveDirection * 50
+                    root.Velocity = Vector3.new(moveDir.X, root.Velocity.Y, moveDir.Z)
+                end
+            end)
+            print("Speed Mask activated!")
+        else
+            humanoid.WalkSpeed = 16
+            root.Velocity = Vector3.new(0, root.Velocity.Y, 0)
+            print("Speed Mask deactivated!")
+        end
+    end
+end)
+
+-- Script 11: Anti-Admin Detection (Упрощено)
+local antiAdminActive = false
+addToggle(tabContents.Bypass, "Anti-Admin Detection", false, function(value)
+    antiAdminActive = value
+    if value then
+        spawn(function()
+            while antiAdminActive and task.wait(math.random(5, 15)) do
+                VU:CaptureController()
+                print("Anti-Admin Detection: Masking")
+            end
+        end)
+        print("Anti-Admin Detection activated!")
+    else
+        print("Anti-Admin Detection deactivated!")
+    end
+end)
+
+-- 11. Meta Section
+addButton(tabContents.Meta, "Infinite Yield", function()
+    loadstring(game:HttpGet("https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source"))()
+end)
+
+addButton(tabContents.Meta, "Solara Hub v3", function()
+    loadstring(game:HttpGet("https://cdn.wearedevs.net/scripts/Solara%20Hub%20v3.txt"))()
+end)
+
+addButton(tabContents.Meta, "PShade Ultimate", function()
+    loadstring(game:HttpGet('https://raw.githubusercontent.com/randomstring0/pshade-ultimate/refs/heads/main/src/cd.lua'))()
+end)
+
+addButton(tabContents.Meta, "Ghost Hub", function()
+    loadstring(game:HttpGet('https://raw.githubusercontent.com/GhostPlayer352/Test4/main/GhostHub'))()
+end)
+
+addButton(tabContents.Meta, "Ghost Hub (src рабочий)", function()
+    loadstring(game:HttpGet('https://raw.githubusercontent.com/MyData3524/RobloxScripts/refs/heads/main/Ghost%20Hub'))()
+end)
+
+addButton(tabContents.Meta, "Fling fe", function()
+    loadstring(game:HttpGet('https://raw.githubusercontent.com/Wer0000/System-hub-V3/refs/heads/main/flings'))()
+end)
+
+addButton(tabContents.Meta, "invisible", function()
+    loadstring(game:HttpGet('https://pastebin.com/raw/dhVEWvWu'))()
+end)
+
+addButton(tabContents.Meta, "hacker chat v5", function()
+    loadstring(game:HttpGet('https://raw.githubusercontent.com/Wer0000/System-hub-V3/refs/heads/main/module.lua'))()
+end)
+
+-- 13. Server Section
+addButton(tabContents.Server, "Server Hop", function()
+    local servers = game:GetService("HttpService"):JSONDecode(game:HttpGet("https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?sortOrder=Asc&limit=100")).data
+    local randomServer = servers[math.random(1, #servers)]
+    game:GetService("TeleportService"):TeleportToPlaceInstance(game.PlaceId, randomServer.id)
+end)
+
+addTextbox(tabContents.Server, "Execute Server Script (Placeholder)", "-- Server Script Here", function(value)
+    print("Execute Server Script - Placeholder")
+end)
+
+addTextbox(tabContents.Server, "Join Specific Server (Placeholder)", "Server ID Here", function(value)
+    print("Join Specific Server - Placeholder")
+end)
+
+-- 14. Camera Section
+addSlider(tabContents.Camera, "Camera Zoom", 0, 100, 0, function(value)
+    workspace.CurrentCamera.FieldOfView = 70 - value
+end)
+
+addToggle(tabContents.Camera, "Lock Camera to Player", false, function(value)
+    if value then
+        workspace.CurrentCamera.CameraSubject = Players.LocalPlayer.Character.Humanoid
+    else
+        workspace.CurrentCamera.CameraSubject = Players.LocalPlayer.Character
+    end
+end)
+
+-- Player List Management
+local function updatePlayerLists()
+    local activePlayers = {}
+    for _, player in pairs(Players:GetPlayers()) do
+        table.insert(activePlayers, player.Name)
+    end
+    
+    if playerDropdown then
+        playerDropdown.update(activePlayers)
+    end
+    
+    if teleportDropdown then
+        teleportDropdown.update(activePlayers)
+    end
+end
+
+Players.PlayerAdded:Connect(updatePlayerLists)
+Players.PlayerRemoving:Connect(updatePlayerLists)
+spawn(function()
+    while task.wait(1) do
+        updatePlayerLists()
+    end
+end)
+updatePlayerLists()
+
+-- Select first tab by default
+if #tabs > 0 then
+    local firstTab = tabs[1]
+    if currentTab then
+        currentTab.content.Visible = false
+        currentTab.button.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+    end
+    firstTab.content.Visible = true
+    firstTab.button.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+    currentTab = {button = firstTab.button, content = firstTab.content}
+end
