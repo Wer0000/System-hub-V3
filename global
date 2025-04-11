@@ -1,0 +1,696 @@
+local Players = game:GetService("Players")
+local HttpService = game:GetService("HttpService")
+local UserInputService = game:GetService("UserInputService")
+
+-- Создаем ScreenGui
+local ChatGui = Instance.new("ScreenGui")
+ChatGui.Name = "GlobalChat"
+ChatGui.Parent = game.CoreGui
+
+-- Основной фрейм списка чатов
+local ChatFrame = Instance.new("Frame")
+ChatFrame.Parent = ChatGui
+ChatFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+ChatFrame.BorderColor3 = Color3.fromRGB(100, 100, 100)
+ChatFrame.Position = UDim2.new(0.03, 0, 0.07, 0)
+ChatFrame.Size = UDim2.new(0, 300, 0, 400)
+ChatFrame.Active = true
+ChatFrame.Visible = false
+
+-- Фрейм для выбранного чата
+local SelectedChatFrame = Instance.new("Frame")
+SelectedChatFrame.Parent = ChatGui
+SelectedChatFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+SelectedChatFrame.BorderColor3 = Color3.fromRGB(100, 100, 100)
+SelectedChatFrame.Position = UDim2.new(0.03, 0, 0.07, 0)
+SelectedChatFrame.Size = UDim2.new(0, 300, 0, 400)
+SelectedChatFrame.Active = true
+SelectedChatFrame.Visible = false
+
+-- Заголовки
+local Title = Instance.new("TextLabel")
+Title.Parent = ChatFrame
+Title.BackgroundTransparency = 1
+Title.Position = UDim2.new(0.02, 0, 0, 0)
+Title.Size = UDim2.new(0.65, 0, 0.1, 0)
+Title.TextColor3 = Color3.fromRGB(255, 255, 255) -- Исправлено с "TextColor chief"
+Title.Font = Enum.Font.SourceSansBold
+Title.Text = "Chat List"
+Title.TextScaled = true
+Title.TextXAlignment = Enum.TextXAlignment.Left
+
+local SelectedTitle = Instance.new("TextLabel")
+SelectedTitle.Parent = SelectedChatFrame
+SelectedTitle.BackgroundTransparency = 1
+SelectedTitle.Position = UDim2.new(0.02, 0, 0, 0)
+SelectedTitle.Size = UDim2.new(0.65, 0, 0.1, 0)
+SelectedTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+SelectedTitle.Font = Enum.Font.SourceSansBold
+SelectedTitle.Text = "Selected Chat"
+SelectedTitle.TextScaled = true
+SelectedTitle.TextXAlignment = Enum.TextXAlignment.Left
+
+-- Кнопки управления
+local Exit = Instance.new("TextButton")
+Exit.Parent = ChatFrame
+Exit.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+Exit.BorderColor3 = Color3.fromRGB(100, 100, 100)
+Exit.Position = UDim2.new(0.9, 0, 0, 0)
+Exit.Size = UDim2.new(0.1, 0, 0.1, 0)
+Exit.Text = "X"
+Exit.TextColor3 = Color3.fromRGB(255, 255, 255)
+Exit.Font = Enum.Font.SourceSansBold
+Exit.TextScaled = true
+
+local SelectedExit = Instance.new("TextButton")
+SelectedExit.Parent = SelectedChatFrame
+SelectedExit.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+SelectedExit.BorderColor3 = Color3.fromRGB(100, 100, 100)
+SelectedExit.Position = UDim2.new(0.9, 0, 0, 0)
+SelectedExit.Size = UDim2.new(0.1, 0, 0.1, 0)
+SelectedExit.Text = "X"
+SelectedExit.TextColor3 = Color3.fromRGB(255, 255, 255)
+SelectedExit.Font = Enum.Font.SourceSansBold
+SelectedExit.TextScaled = true
+
+local DisableChat = Instance.new("TextButton")
+DisableChat.Parent = ChatFrame
+DisableChat.BackgroundColor3 = Color3.fromRGB(255, 165, 0)
+DisableChat.BorderColor3 = Color3.fromRGB(100, 100, 100)
+DisableChat.Position = UDim2.new(0.78, 0, 0, 0)
+DisableChat.Size = UDim2.new(0.1, 0, 0.1, 0)
+DisableChat.Text = "Off"
+DisableChat.TextColor3 = Color3.fromRGB(255, 255, 255)
+DisableChat.Font = Enum.Font.SourceSansBold
+DisableChat.TextScaled = true
+
+local BackButton = Instance.new("TextButton")
+BackButton.Parent = SelectedChatFrame
+BackButton.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
+BackButton.BorderColor3 = Color3.fromRGB(150, 150, 150)
+BackButton.Position = UDim2.new(0.78, 0, 0, 0)
+BackButton.Size = UDim2.new(0.1, 0, 0.1, 0)
+BackButton.Text = "Back"
+BackButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+BackButton.Font = Enum.Font.SourceSansBold
+BackButton.TextScaled = true
+
+local CreateChatButton = Instance.new("TextButton")
+CreateChatButton.Parent = ChatFrame
+CreateChatButton.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+CreateChatButton.BorderColor3 = Color3.fromRGB(100, 100, 100)
+CreateChatButton.Position = UDim2.new(0.03, 0, 0.95, 0)
+CreateChatButton.Size = UDim2.new(0.3, 0, 0.05, 0)
+CreateChatButton.Text = "Create Chat"
+CreateChatButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+CreateChatButton.Font = Enum.Font.SourceSansBold
+CreateChatButton.TextScaled = true
+
+local NewChatTextBox = Instance.new("TextBox")
+NewChatTextBox.Parent = ChatFrame
+NewChatTextBox.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+NewChatTextBox.BorderColor3 = Color3.fromRGB(100, 100, 100)
+NewChatTextBox.Position = UDim2.new(0.35, 0, 0.95, 0)
+NewChatTextBox.Size = UDim2.new(0.4, 0, 0.05, 0)
+NewChatTextBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+NewChatTextBox.Font = Enum.Font.SourceSans
+NewChatTextBox.Text = ""
+NewChatTextBox.PlaceholderText = "Chat Name..."
+NewChatTextBox.TextSize = 16
+NewChatTextBox.TextXAlignment = Enum.TextXAlignment.Left
+NewChatTextBox.ClearTextOnFocus = false
+
+local DeleteChatButton = Instance.new("TextButton")
+DeleteChatButton.Parent = SelectedChatFrame
+DeleteChatButton.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+DeleteChatButton.BorderColor3 = Color3.fromRGB(100, 100, 100)
+DeleteChatButton.Position = UDim2.new(0.66, 0, 0, 0)
+DeleteChatButton.Size = UDim2.new(0.1, 0, 0.1, 0)
+DeleteChatButton.Text = "Delete"
+DeleteChatButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+DeleteChatButton.Font = Enum.Font.SourceSansBold
+DeleteChatButton.TextScaled = true
+
+local OpenChat = Instance.new("ImageButton")
+OpenChat.Parent = ChatGui
+OpenChat.BackgroundTransparency = 1
+OpenChat.Position = UDim2.new(0.1, 0, 0.2, 0)
+OpenChat.Size = UDim2.new(0, 40, 0, 40)
+OpenChat.Image = "rbxassetid://5058458" -- Замени на свой Asset ID
+OpenChat.Visible = true
+
+local UICorner = Instance.new("UICorner")
+UICorner.CornerRadius = UDim.new(0.5, 0)
+UICorner.Parent = OpenChat
+
+local UIStroke = Instance.new("UIStroke")
+UIStroke.Color = Color3.fromRGB(255, 255, 255)
+UIStroke.Thickness = 2
+UIStroke.Parent = OpenChat
+
+-- ScrollingFrame для списка чатов
+local ChatList = Instance.new("ScrollingFrame")
+ChatList.Parent = ChatFrame
+ChatList.BackgroundTransparency = 1
+ChatList.Position = UDim2.new(0.03, 0, 0.12, 0)
+ChatList.Size = UDim2.new(0.94, 0, 0.82, 0)
+ChatList.CanvasSize = UDim2.new(0, 0, 0, 0)
+ChatList.ScrollBarThickness = 5
+
+-- ScrollingFrame для сообщений выбранного чата
+local SelectedChatHistory = Instance.new("ScrollingFrame")
+SelectedChatHistory.Parent = SelectedChatFrame
+SelectedChatHistory.BackgroundTransparency = 1
+SelectedChatHistory.Position = UDim2.new(0.03, 0, 0.12, 0)
+SelectedChatHistory.Size = UDim2.new(0.94, 0, 0.65, 0)
+SelectedChatHistory.CanvasSize = UDim2.new(0, 0, 0, 0)
+SelectedChatHistory.ScrollBarThickness = 5
+
+-- Поле ввода сообщения
+local SelectedShoutTextBox = Instance.new("TextBox")
+SelectedShoutTextBox.Parent = SelectedChatFrame
+SelectedShoutTextBox.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+SelectedShoutTextBox.BorderColor3 = Color3.fromRGB(100, 100, 100)
+SelectedShoutTextBox.Position = UDim2.new(0.03, 0, 0.8, 0)
+SelectedShoutTextBox.Size = UDim2.new(0.7, 0, 0.15, 0)
+SelectedShoutTextBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+SelectedShoutTextBox.Font = Enum.Font.SourceSans
+SelectedShoutTextBox.Text = ""
+SelectedShoutTextBox.PlaceholderText = "Type your message..."
+SelectedShoutTextBox.TextSize = 16
+SelectedShoutTextBox.TextXAlignment = Enum.TextXAlignment.Left
+SelectedShoutTextBox.TextYAlignment = Enum.TextYAlignment.Top
+SelectedShoutTextBox.TextWrapped = true
+SelectedShoutTextBox.ClearTextOnFocus = false
+SelectedShoutTextBox.MultiLine = true
+
+-- Кнопка отправки
+local SelectedShoutPost = Instance.new("TextButton")
+SelectedShoutPost.Parent = SelectedChatFrame
+SelectedShoutPost.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
+SelectedShoutPost.BorderColor3 = Color3.fromRGB(100, 100, 100)
+SelectedShoutPost.Position = UDim2.new(0.75, 0, 0.8, 0)
+SelectedShoutPost.Size = UDim2.new(0.22, 0, 0.15, 0)
+SelectedShoutPost.Text = "Post"
+SelectedShoutPost.TextColor3 = Color3.fromRGB(255, 255, 255)
+SelectedShoutPost.Font = Enum.Font.SourceSansBold
+SelectedShoutPost.TextScaled = true
+
+-- Firebase настройки
+local GhostHub_Shout_Database_URL = "https://ghosthub-shout-ccec9-default-rtdb.firebaseio.com/"
+local GhostHub_Shout_Database_Secret = "TqDzshgeNUnx6XCGYGgdLmjltjvPzt2SYmwY6lgT"
+
+-- Хранилище активных чатов и истории
+local ActiveChats = {}
+local ChatHistories = {}
+
+-- Функция получения даты создания
+local function GetCreationDate(userId)
+    local success, response = pcall(function()
+        return HttpService:JSONDecode(game:HttpGet("https://users.roblox.com/v1/users/" .. userId))
+    end)
+    if success and response and response.created then
+        return os.date("%d/%m/%Y", os.time({
+            year = tonumber(response.created:sub(1, 4)),
+            month = tonumber(response.created:sub(6, 7)),
+            day = tonumber(response.created:sub(9, 10))
+        }))
+    else
+        return "Unknown"
+    end
+end
+
+-- Функция обработки ссылок
+local function SplitLink(link)
+    local parts = {}
+    for part in link:gmatch("[^/]+") do
+        table.insert(parts, part)
+    end
+    return table.concat(parts, " / ")
+end
+
+-- Функция отображения сообщений (без дублирования длинных текстов)
+local function DisplayMessage(historyFrame, username, userId, message, timestamp)
+    -- Проверка на дублирование по полному тексту сообщения и временной метке
+    for _, msgFrame in pairs(historyFrame:GetChildren()) do
+        if msgFrame:IsA("Frame") then
+            local textBox = msgFrame:FindFirstChild("TextBox")
+            local msgTimestamp = msgFrame:FindFirstChild("Timestamp")
+            local fullMessage = msgFrame:FindFirstChild("FullMessage")
+            if textBox and msgTimestamp and fullMessage and fullMessage.Value == message and msgTimestamp.Value == timestamp then
+                return -- Сообщение уже существует, выходим
+            end
+        end
+    end
+
+    -- Создание нового сообщения
+    local MessageFrame = Instance.new("Frame")
+    MessageFrame.Parent = historyFrame
+    MessageFrame.Size = UDim2.new(1, 0, 0, 40)
+    MessageFrame.Position = UDim2.new(0, 0, 0, historyFrame.CanvasSize.Y.Offset)
+    MessageFrame.BackgroundTransparency = 1
+
+    local TimestampValue = Instance.new("IntValue")
+    TimestampValue.Name = "Timestamp"
+    TimestampValue.Value = timestamp
+    TimestampValue.Parent = MessageFrame
+
+    local FullMessageValue = Instance.new("StringValue")
+    FullMessageValue.Name = "FullMessage"
+    FullMessageValue.Value = message -- Храним полный текст сообщения
+    FullMessageValue.Parent = MessageFrame
+
+    local AvatarImage = Instance.new("ImageButton")
+    AvatarImage.Parent = MessageFrame
+    AvatarImage.Size = UDim2.new(0, 30, 0, 30)
+    AvatarImage.Position = UDim2.new(0, 5, 0, 5)
+    AvatarImage.BackgroundTransparency = 1
+    local success, thumbnail = pcall(function()
+        return Players:GetUserThumbnailAsync(userId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size48x48)
+    end)
+    AvatarImage.Image = success and thumbnail or "rbxasset://textures/ui/GuiImagePlaceholder.png"
+    AvatarImage.MouseButton1Click:Connect(function()
+        local infoFrame = Instance.new("Frame")
+        infoFrame.Parent = ChatGui
+        infoFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+        infoFrame.BorderColor3 = Color3.fromRGB(100, 100, 100)
+        infoFrame.Position = UDim2.new(0.5, -150, 0.5, -100)
+        infoFrame.Size = UDim2.new(0, 300, 0, 200)
+
+        local avatar = Instance.new("ImageLabel")
+        avatar.Parent = infoFrame
+        avatar.Size = UDim2.new(0.3, 0, 0.3, 0)
+        avatar.Position = UDim2.new(0.05, 0, 0.05, 0)
+        avatar.BackgroundTransparency = 1
+        avatar.Image = Players:GetUserThumbnailAsync(userId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size420x420)
+        local corner = Instance.new("UICorner")
+        corner.CornerRadius = UDim.new(1, 0)
+        corner.Parent = avatar
+
+        local infoText = Instance.new("TextLabel")
+        infoText.Parent = infoFrame
+        infoText.BackgroundTransparency = 1
+        infoText.Position = UDim2.new(0.4, 0, 0.05, 0)
+        infoText.Size = UDim2.new(0.55, 0, 0.7, 0)
+        infoText.TextColor3 = Color3.fromRGB(255, 255, 255)
+        infoText.Font = Enum.Font.SourceSans
+        infoText.Text = "Name: " .. username .. "\nUserId: " .. userId .. "\nCreated: " .. GetCreationDate(userId)
+        infoText.TextSize = 16
+        infoText.TextWrapped = true
+        infoText.TextXAlignment = Enum.TextXAlignment.Left
+
+        local closeButton = Instance.new("TextButton")
+        closeButton.Parent = infoFrame
+        closeButton.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+        closeButton.BorderColor3 = Color3.fromRGB(100, 100, 100)
+        closeButton.Position = UDim2.new(0.9, 0, 0, 0)
+        closeButton.Size = UDim2.new(0.1, 0, 0.1, 0)
+        closeButton.Text = "X"
+        closeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+        closeButton.Font = Enum.Font.SourceSansBold
+        closeButton.TextScaled = true
+        closeButton.MouseButton1Click:Connect(function()
+            infoFrame:Destroy()
+        end)
+    end)
+
+    -- Обработка текста с учетом ссылок
+    local displayText = username .. ": "
+    if message:match("https?://[%w-_%.%?%&=/%+]+") then
+        local link = message:match("https?://[%w-_%.%?%&=/%+]+")
+        displayText = displayText .. message:gsub(link, SplitLink(link))
+    else
+        displayText = displayText .. message
+    end
+
+    local MessageText = Instance.new("TextBox")
+    MessageText.Parent = MessageFrame
+    MessageText.Size = UDim2.new(0.7, 0, 1, 0)
+    MessageText.Position = UDim2.new(0.15, 0, 0, 0)
+    MessageText.BackgroundTransparency = 1
+    MessageText.Text = displayText
+    MessageText.TextColor3 = Color3.fromRGB(255, 255, 255)
+    MessageText.Font = Enum.Font.SourceSans
+    MessageText.TextSize = 16
+    MessageText.TextXAlignment = Enum.TextXAlignment.Left
+    MessageText.TextYAlignment = Enum.TextYAlignment.Top
+    MessageText.TextWrapped = true
+    MessageText.TextEditable = false
+    MessageText.Selectable = true
+
+    local CopyButton = Instance.new("TextButton")
+    CopyButton.Parent = MessageFrame
+    CopyButton.Size = UDim2.new(0.1, 0, 0.5, 0)
+    CopyButton.Position = UDim2.new(0.85, 0, 0.25, 0)
+    CopyButton.Text = "Copy"
+    CopyButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    CopyButton.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
+    CopyButton.MouseButton1Click:Connect(function()
+        setclipboard(MessageText.Text)
+        local notification = Instance.new("ScreenGui")
+        notification.Parent = game.CoreGui
+        local frame = Instance.new("Frame")
+        frame.Parent = notification
+        frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+        frame.Position = UDim2.new(0.78, 0, 0.7, 0)
+        frame.Size = UDim2.new(0.2, 0, 0.25, 0)
+        local label = Instance.new("TextLabel")
+        label.Parent = frame
+        label.BackgroundTransparency = 1
+        label.Position = UDim2.new(0.01, 0, 0.01, 0)
+        label.Size = UDim2.new(0.98, 0, 0.98, 0)
+        label.TextColor3 = Color3.fromRGB(255, 255, 255)
+        label.Font = Enum.Font.SourceSans
+        label.Text = "Message copied!"
+        label.TextScaled = true
+        wait(2)
+        notification:Destroy()
+    end)
+
+    historyFrame.CanvasSize = UDim2.new(0, 0, 0, historyFrame.CanvasSize.Y.Offset + 40)
+    historyFrame.CanvasPosition = Vector2.new(0, historyFrame.CanvasSize.Y.Offset)
+end
+
+-- Функция отправки сообщения
+local function PostShout(chatId, msg)
+    local database = GhostHub_Shout_Database_URL .. chatId .. ".json?auth=" .. GhostHub_Shout_Database_Secret
+    local request = request or syn.request or http.request
+    local Table = {
+        Username = Players.LocalPlayer.Name,
+        UserId = Players.LocalPlayer.UserId,
+        Message = msg,
+        Timestamp = os.time()
+    }
+    local success, response = pcall(function()
+        return request({
+            Url = database,
+            Method = "PUT",
+            Headers = {["Content-Type"] = "application/json"},
+            Body = HttpService:JSONEncode(Table)
+        })
+    end)
+    if not success then
+        warn("Failed to post message: " .. tostring(response))
+    end
+    return success
+end
+
+-- Функция обновления списка чатов
+local function UpdateChatList()
+    local success, ChatData = pcall(function()
+        return HttpService:JSONDecode(game:HttpGet(GhostHub_Shout_Database_URL .. ".json"))
+    end)
+    if success and ChatData then
+        for _, child in pairs(ChatList:GetChildren()) do
+            if child:IsA("TextButton") then
+                child:Destroy()
+            end
+        end
+        local yPos = 0
+        for chatId, chatInfo in pairs(ChatData) do
+            local lastMessage = chatInfo.Message or "No messages yet"
+            local ChatButton = Instance.new("TextButton")
+            ChatButton.Parent = ChatList
+            ChatButton.Size = UDim2.new(1, 0, 0, 40)
+            ChatButton.Position = UDim2.new(0, 0, 0, yPos)
+            ChatButton.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+            ChatButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+            ChatButton.Font = Enum.Font.SourceSansBold
+            ChatButton.Text = chatId .. ": " .. (lastMessage:sub(1, 20) .. (lastMessage:len() > 20 and "..." or ""))
+            ChatButton.TextScaled = true
+            ChatButton.TextXAlignment = Enum.TextXAlignment.Left
+            ChatButton.TextYAlignment = Enum.TextYAlignment.Center
+            ChatButton.MouseButton1Click:Connect(function()
+                ChatFrame.Visible = false
+                SelectedChatFrame.Position = ChatFrame.Position
+                SelectedChatFrame.Visible = true
+                SelectedTitle.Text = chatId
+                ActiveChats[chatId] = chatId
+                -- Восстановление истории из локального хранилища
+                SelectedChatHistory:ClearAllChildren()
+                SelectedChatHistory.CanvasSize = UDim2.new(0, 0, 0, 0)
+                if ChatHistories[chatId] then
+                    for _, msg in pairs(ChatHistories[chatId]) do
+                        DisplayMessage(SelectedChatHistory, msg.Username, msg.UserId, msg.Message, msg.Timestamp)
+                    end
+                end
+                -- Обновление с сервера
+                local success, data = pcall(function()
+                    return HttpService:JSONDecode(game:HttpGet(GhostHub_Shout_Database_URL .. chatId .. ".json"))
+                end)
+                if success and data and data.Message then
+                    local exists = false
+                    if ChatHistories[chatId] then
+                        for _, msg in pairs(ChatHistories[chatId]) do
+                            if msg.Timestamp == data.Timestamp and msg.Message == data.Message and msg.Username == data.Username then
+                                exists = true
+                                break
+                            end
+                        end
+                    end
+                    if not exists then
+                        DisplayMessage(SelectedChatHistory, data.Username, data.UserId, data.Message, data.Timestamp)
+                        if not ChatHistories[chatId] then ChatHistories[chatId] = {} end
+                        table.insert(ChatHistories[chatId], {
+                            Username = data.Username,
+                            UserId = data.UserId,
+                            Message = data.Message,
+                            Timestamp = data.Timestamp
+                        })
+                    end
+                end
+            end)
+            yPos = yPos + 40
+        end
+        ChatList.CanvasSize = UDim2.new(0, 0, 0, yPos)
+    else
+        warn("Failed to fetch chat data from Firebase")
+    end
+end
+
+-- Функция создания нового чата
+local function CreateChat(chatName)
+    if chatName == "" or chatName == "Shout" then return end
+    local database = GhostHub_Shout_Database_URL .. chatName .. ".json?auth=" .. GhostHub_Shout_Database_Secret
+    local request = request or syn.request or http.request
+    local Table = {
+        Username = Players.LocalPlayer.Name,
+        UserId = Players.LocalPlayer.UserId,
+        Message = "Chat created!",
+        Timestamp = os.time()
+    }
+    local success, response = pcall(function()
+        return request({
+            Url = database,
+            Method = "PUT",
+            Headers = {["Content-Type"] = "application/json"},
+            Body = HttpService:JSONEncode(Table)
+        })
+    end)
+    if success then
+        UpdateChatList()
+    else
+        warn("Failed to create chat: " .. tostring(response))
+    end
+end
+
+-- Функция удаления чата
+local function DeleteChat(chatId)
+    if chatId == "Shout" then
+        warn("Cannot delete system chat 'Shout'")
+        return
+    end
+    local database = GhostHub_Shout_Database_URL .. chatId .. ".json?auth=" .. GhostHub_Shout_Database_Secret
+    local request = request or syn.request or http.request
+    local success, response = pcall(function()
+        return request({
+            Url = database,
+            Method = "DELETE",
+            Headers = {["Content-Type"] = "application/json"}
+        })
+    end)
+    if success then
+        SelectedChatFrame.Visible = false
+        ChatFrame.Visible = true
+        ChatHistories[chatId] = nil
+        UpdateChatList()
+    else
+        warn("Failed to delete chat: " .. tostring(response))
+    end
+end
+
+-- Логика кнопок
+Exit.MouseButton1Click:Connect(function()
+    ChatFrame.Visible = false
+    OpenChat.Visible = true
+end)
+
+SelectedExit.MouseButton1Click:Connect(function()
+    SelectedChatFrame.Visible = false
+    OpenChat.Visible = true
+end)
+
+DisableChat.MouseButton1Click:Connect(function()
+    ChatGui.Enabled = false
+end)
+
+OpenChat.MouseButton1Click:Connect(function()
+    OpenChat.Visible = false
+    ChatFrame.Visible = true
+    UpdateChatList()
+end)
+
+BackButton.MouseButton1Click:Connect(function()
+    SelectedChatFrame.Visible = false
+    ChatFrame.Visible = true
+    UpdateChatList()
+end)
+
+SelectedShoutPost.MouseButton1Click:Connect(function()
+    if SelectedShoutTextBox.Text ~= "" then
+        local chatId = ActiveChats[SelectedTitle.Text]
+        if PostShout(chatId, SelectedShoutTextBox.Text) then
+            local timestamp = os.time()
+            DisplayMessage(SelectedChatHistory, Players.LocalPlayer.Name, Players.LocalPlayer.UserId, SelectedShoutTextBox.Text, timestamp)
+            if not ChatHistories[chatId] then ChatHistories[chatId] = {} end
+            table.insert(ChatHistories[chatId], {
+                Username = Players.LocalPlayer.Name,
+                UserId = Players.LocalPlayer.UserId,
+                Message = SelectedShoutTextBox.Text,
+                Timestamp = timestamp
+            })
+            SelectedShoutTextBox.Text = ""
+        end
+    end
+end)
+
+CreateChatButton.MouseButton1Click:Connect(function()
+    if NewChatTextBox.Text ~= "" then
+        CreateChat(NewChatTextBox.Text)
+        NewChatTextBox.Text = ""
+    end
+end)
+
+DeleteChatButton.MouseButton1Click:Connect(function()
+    local chatId = ActiveChats[SelectedTitle.Text]
+    if chatId then
+        DeleteChat(chatId)
+    end
+end)
+
+-- Автообновление сообщений в выбранном чате
+spawn(function()
+    while true do
+        wait(5)
+        if SelectedChatFrame.Visible then
+            local chatId = ActiveChats[SelectedTitle.Text]
+            if chatId then
+                local success, data = pcall(function()
+                    return HttpService:JSONDecode(game:HttpGet(GhostHub_Shout_Database_URL .. chatId .. ".json"))
+                end)
+                if success and data and data.Message then
+                    local exists = false
+                    if ChatHistories[chatId] then
+                        for _, msg in pairs(ChatHistories[chatId]) do
+                            if msg.Timestamp == data.Timestamp and msg.Message == data.Message and msg.Username == data.Username then
+                                exists = true
+                                break
+                            end
+                        end
+                    end
+                    if not exists then
+                        DisplayMessage(SelectedChatHistory, data.Username, data.UserId, data.Message, data.Timestamp)
+                        if not ChatHistories[chatId] then ChatHistories[chatId] = {} end
+                        table.insert(ChatHistories[chatId], {
+                            Username = data.Username,
+                            UserId = data.UserId,
+                            Message = data.Message,
+                            Timestamp = data.Timestamp
+                        })
+                    end
+                end
+            end
+        end
+    end
+end)
+
+-- Автообновление списка чатов
+spawn(function()
+    while true do
+        wait(5)
+        if ChatFrame.Visible then
+            UpdateChatList()
+        end
+    end
+end)
+
+-- Перетаскивание списка чатов
+local dragging, dragStart, startPos
+Title.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = ChatFrame.Position
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = input.Position - dragStart
+        ChatFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
+
+Title.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = false
+    end
+end)
+
+-- Перетаскивание выбранного чата
+local draggingSelected, dragStartSelected, startPosSelected
+SelectedTitle.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        draggingSelected = true
+        dragStartSelected = input.Position
+        startPosSelected = SelectedChatFrame.Position
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if draggingSelected and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = input.Position - dragStartSelected
+        SelectedChatFrame.Position = UDim2.new(startPosSelected.X.Scale, startPosSelected.X.Offset + delta.X, startPosSelected.Y.Scale, startPosSelected.Y.Offset + delta.Y)
+    end
+end)
+
+SelectedTitle.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        draggingSelected = false
+    end
+end)
+
+-- Перетаскивание иконки
+local draggingOpenChat, dragStartOpenChat, startPosOpenChat
+OpenChat.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        draggingOpenChat = true
+        dragStartOpenChat = input.Position
+        startPosOpenChat = OpenChat.Position
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if draggingOpenChat and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = input.Position - dragStartOpenChat
+        OpenChat.Position = UDim2.new(startPosOpenChat.X.Scale, startPosOpenChat.X.Offset + delta.X, startPosOpenChat.Y.Scale, startPosOpenChat.Y.Offset + delta.Y)
+    end
+end)
+
+OpenChat.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        draggingOpenChat = false
+    end
+end)
+
+print("Chat script initialized successfully!")
