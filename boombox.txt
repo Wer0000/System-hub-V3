@@ -1,0 +1,249 @@
+-- JJSploit Boombox Control UI (PC + Mobile, Selective Disable)
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local boomboxStates = {}  -- Хранит оригинальные SoundId
+local isDisabling = false
+
+-- Создаём UI
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "BoomboxControl"
+ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+ScreenGui.ResetOnSpawn = false
+
+local Frame = Instance.new("Frame")
+Frame.Size = UDim2.new(0, 250, 0, 350)
+Frame.Position = UDim2.new(0.5, -125, 0.5, -175)
+Frame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+Frame.BorderSizePixel = 0
+Frame.Parent = ScreenGui
+
+-- Перетаскивание
+local dragging, dragInput, dragStart, startPos
+Frame.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = Frame.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+            end
+        end)
+    end
+end)
+
+Frame.InputChanged:Connect(function(input)
+    if (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) and dragging then
+        local delta = input.Position - dragStart
+        Frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
+
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(1, 0, 0, 30)
+Title.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+Title.Text = "Boombox Control"
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title.TextSize = 18
+Title.Font = Enum.Font.SourceSansBold
+Title.Parent = Frame
+
+local OffButton = Instance.new("TextButton")
+OffButton.Size = UDim2.new(0, 80, 0, 30)
+OffButton.Position = UDim2.new(0, 20, 0, 40)
+OffButton.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+OffButton.Text = "Off"
+OffButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+OffButton.TextSize = 16
+OffButton.Font = Enum.Font.SourceSans
+OffButton.Parent = Frame
+
+local OnButton = Instance.new("TextButton")
+OnButton.Size = UDim2.new(0, 80, 0, 30)
+OnButton.Position = UDim2.new(0, 150, 0, 40)
+OnButton.BackgroundColor3 = Color3.fromRGB(50, 255, 50)
+OnButton.Text = "On"
+OnButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+OnButton.TextSize = 16
+OnButton.Font = Enum.Font.SourceSans
+OnButton.Parent = Frame
+
+local CloseButton = Instance.new("TextButton")
+CloseButton.Size = UDim2.new(0, 20, 0, 20)
+CloseButton.Position = UDim2.new(1, -25, 0, 5)
+CloseButton.BackgroundColor3 = Color3.fromRGB(200, 0, 0)
+CloseButton.Text = "X"
+CloseButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+CloseButton.TextSize = 14
+CloseButton.Font = Enum.Font.SourceSansBold
+CloseButton.Parent = Frame
+
+local StatusLabel = Instance.new("TextLabel")
+StatusLabel.Size = UDim2.new(1, -10, 0, 20)
+StatusLabel.Position = UDim2.new(0, 5, 0, 80)
+StatusLabel.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+StatusLabel.Text = "Status: Off"
+StatusLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+StatusLabel.TextSize = 14
+StatusLabel.Parent = Frame
+
+local IdListFrame = Instance.new("ScrollingFrame")
+IdListFrame.Size = UDim2.new(1, -10, 0, 200)
+IdListFrame.Position = UDim2.new(0, 5, 0, 110)
+IdListFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+IdListFrame.BorderSizePixel = 0
+IdListFrame.ScrollBarThickness = 5
+IdListFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+IdListFrame.Parent = Frame
+
+-- Функция для извлечения числового ID из rbxassetid
+local function extractId(soundId)
+    return soundId:match("%d+$") or soundId  -- Извлекаем только цифры в конце или возвращаем как есть
+end
+
+-- Функция для обновления списка ID
+local function updateIdList()
+    for _, child in pairs(IdListFrame:GetChildren()) do
+        if child:IsA("TextLabel") then child:Destroy() end
+    end
+    
+    local yOffset = 5
+    for sound, id in pairs(boomboxStates) do
+        local label = Instance.new("TextLabel")
+        label.Size = UDim2.new(1, -10, 0, 20)
+        label.Position = UDim2.new(0, 5, 0, yOffset)
+        label.BackgroundTransparency = 1
+        label.Text = "ID: " .. extractId(id)  -- Показываем только числовую часть
+        label.TextColor3 = Color3.fromRGB(200, 200, 200)
+        label.TextSize = 14
+        label.TextXAlignment = Enum.TextXAlignment.Left
+        label.Parent = IdListFrame
+        yOffset = yOffset + 25
+    end
+    
+    IdListFrame.CanvasSize = UDim2.new(0, 0, 0, yOffset)
+end
+
+-- Функция для отключения бумбокса (кроме себя)
+local function disableBoombox(player)
+    if player == LocalPlayer then return end
+    
+    local character = player.Character or player.CharacterAdded:Wait()
+    local backpack = player:FindFirstChild("Backpack") or player:WaitForChild("Backpack", 5)
+    
+    if not character or not backpack then return end  -- Тихий выход, если нет нужных объектов
+
+    local function processTool(tool)
+        if tool:IsA("Tool") and tool.Name:lower():find("boombox") then
+            local sound = tool:FindFirstChildWhichIsA("Sound", true)
+            if sound then
+                if not boomboxStates[sound] then
+                    boomboxStates[sound] = sound.SoundId
+                    updateIdList()
+                end
+                local success, err = pcall(function()
+                    sound.SoundId = "rbxassetid://0"
+                    sound:Stop()
+                end)
+                if not success then
+                    sound:Stop()  -- Останавливаем, если SoundId не меняется
+                end
+            end
+        end
+    end
+
+    for _, item in pairs(backpack:GetChildren()) do
+        pcall(processTool, item)
+    end
+    for _, item in pairs(character:GetChildren()) do
+        pcall(processTool, item)
+    end
+end
+
+-- Функция для восстановления
+local function restoreBoomboxes()
+    for sound, originalId in pairs(boomboxStates) do
+        if sound and sound.Parent then
+            local success, err = pcall(function()
+                sound.SoundId = originalId
+                sound:Play()
+            end)
+            if not success then
+                -- Ничего не выводим, просто пропускаем
+            end
+        end
+    end
+    boomboxStates = {}
+    updateIdList()
+end
+
+-- Отключение у всех (кроме себя)
+local function disableAllBoomboxes()
+    for _, player in pairs(Players:GetPlayers()) do
+        pcall(disableBoombox, player)
+    end
+end
+
+-- Основной цикл
+local function startDisabling()
+    spawn(function()
+        while isDisabling do
+            disableAllBoomboxes()
+            task.wait(2)  -- Увеличил интервал для оптимизации
+        end
+    end)
+end
+
+-- Обработка новых игроков и бумбоксов
+Players.PlayerAdded:Connect(function(player)
+    player.CharacterAdded:Connect(function()
+        if isDisabling then
+            task.wait(0.5)
+            pcall(disableBoombox, player)
+        end
+    end)
+    
+    local backpack = player:FindFirstChild("Backpack") or player:WaitForChild("Backpack", 5)
+    if backpack then
+        backpack.ChildAdded:Connect(function(child)
+            if isDisabling and child:IsA("Tool") and child.Name:lower():find("boombox") then
+                task.wait(0.5)
+                pcall(disableBoombox, player)
+            end
+        end)
+    end
+end)
+
+-- Кнопка "Off"
+OffButton.MouseButton1Click:Connect(function()
+    if not isDisabling then
+        isDisabling = true
+        StatusLabel.Text = "Status: On (Disabling Others)"
+        StatusLabel.TextColor3 = Color3.fromRGB(255, 50, 50)
+        startDisabling()
+        print("[BoomboxControl] Disabling activated for others")
+    end
+end)
+
+-- Кнопка "On"
+OnButton.MouseButton1Click:Connect(function()
+    if isDisabling then
+        isDisabling = false
+        StatusLabel.Text = "Status: Off"
+        StatusLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+        restoreBoomboxes()
+        print("[BoomboxControl] Disabling deactivated")
+    end
+end)
+
+-- Крестик
+CloseButton.MouseButton1Click:Connect(function()
+    if isDisabling then
+        isDisabling = false
+        restoreBoomboxes()
+    end
+    ScreenGui:Destroy()
+    print("[BoomboxControl] UI closed")
+end)
+
+print("[BoomboxControl] UI Loaded for PC and Mobile. Press 'Off' to disable others' boomboxes!")
