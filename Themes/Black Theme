@@ -26,16 +26,7 @@ local OrionLib = {
 	SaveCfg = false
 }
 
---Feather Icons https://github.com/evoincorp/lucideblox/tree/master/src/modules/util - Created by 7kayoh
 local Icons = {}
-
-local Success, Response = pcall(function()
-	Icons = HttpService:JSONDecode(game:HttpGetAsync("https://raw.githubusercontent.com/evoincorp/lucideblox/master/src/modules/util/icons.json")).icons
-end)
-
-if not Success then
-	warn("\nOrion Library - Failed to load Feather Icons. Error code: " .. Response .. "\n")
-end	
 
 local function GetIcon(IconName)
 	if Icons[IconName] ~= nil then
@@ -45,23 +36,37 @@ local function GetIcon(IconName)
 	end
 end   
 
-local cloneref = cloneref or function(o) return o end
-COREGUI = cloneref(game:GetService("CoreGui"))
-
 local Orion = Instance.new("ScreenGui")
 Orion.Name = "Orio"
-Orion.Parent = get_hidden_gui or gethui or COREGUI
+if syn then
+	syn.protect_gui(Orion)
+	Orion.Parent = game.CoreGui
+else
+	Orion.Parent = gethui() or game.CoreGui
+end
 
-if get_hidden_gui or gethui or COREGUI then
+if gethui then
     for _, Interface in ipairs(gethui():GetChildren()) do
         if Interface.Name == Orion.Name and Interface ~= Orion then
             Interface:Destroy()
+
+            for _, interface in ipairs(gethui():GetChildren()) do
+                if interface:IsA("ScreenGui") and interface.Name == "SystemHubGui" then
+                    interface:Destroy()
+                end
+            end
         end
     end
 else
     for _, Interface in ipairs(game.CoreGui:GetChildren()) do
         if Interface.Name == Orion.Name and Interface ~= Orion then
             Interface:Destroy()
+
+            for _, interface in ipairs(game.CoreGui:GetChildren()) do
+                if interface:IsA("ScreenGui") and interface.Name == "SystemHubGui" then
+                    interface:Destroy()
+                end
+            end
         end
     end
 end
@@ -74,9 +79,6 @@ function OrionLib:IsRunning()
 	end
 
 end
-
--- Function to delete an Orion GUI if another Orion exists
-
 
 local function AddConnection(Signal, Function)
 	if (not OrionLib:IsRunning()) then
@@ -658,30 +660,41 @@ local ScreenGui
 local function MakeShowGui()
     if not ScreenGui then
         ScreenGui = Instance.new("ScreenGui")
-        ScreenGui.Name = "AGJ"
-        ScreenGui.Parent = get_hidden_gui or gethui or COREGUI
-        ScreenGui.ResetOnSpawn = false
-        ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling 
+ScreenGui.Name = "SystemHubGui"
+ScreenGui.Parent = gethui() or game.CoreGui
+ScreenGui.ResetOnSpawn = false
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
-        local Toggle = Instance.new("TextButton")
-        Toggle.Name = "Toggle"
-        Toggle.Parent = ScreenGui
-        Toggle.BackgroundColor3 = Color3.fromRGB(0, 0, 0) 
-        Toggle.Position = UDim2.new(0, 170, 0, 40) 
-        Toggle.Size = UDim2.new(0, 50, 0, 50) 
-        Toggle.Text = "" 
-        Toggle.Draggable = true
-        Toggle.Visible = true
+local Toggle = Instance.new("TextButton")
+Toggle.Name = "Toggle"
+Toggle.Parent = ScreenGui
+Toggle.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+Toggle.Position = UDim2.new(0, 170, 0, 40)
+Toggle.Size = UDim2.new(0, 60, 0, 60)
 
-        local Corner1 = Instance.new("UICorner")
-        Corner1.CornerRadius = UDim.new(0, 3)
-        Corner1.Parent = Toggle
+Toggle.Draggable = true
+Toggle.Visible = true
 
-        Toggle.MouseButton1Click:Connect(function()
-            if MainWindow then
+local Corner1 = Instance.new("UICorner")
+Corner1.CornerRadius = UDim.new(0, 3)
+Corner1.Parent = Toggle
+
+local Image = Instance.new("ImageLabel")
+Image.Name = "Image"
+Image.Parent = Toggle
+Image.Size = UDim2.new(1, 0, 1, 0)
+Image.BackgroundTransparency = 1
+Image.Image = "rbxassetid://74132088634336"
+
+local Corner1 = Instance.new("UICorner")
+Corner1.CornerRadius = UDim.new(0, 3)
+Corner1.Parent = Image
+
+Toggle.MouseButton1Click:Connect(function()
+ if MainWindow then
                 MainWindow.Visible = not MainWindow.Visible 
             end
-        end)
+end)
     end
 end
 
@@ -705,9 +718,23 @@ AddConnection(UserInputService.InputBegan, function(Input)
 end
 
 	AddConnection(CloseBtn.MouseButton1Up, function()
-pcall(function() getgenv().System_Hub = false end)
-		Orion:Destroy()
-	end)
+    pcall(function() getgenv().System_Hub = false end)
+    Orion:Destroy()
+
+    if gethui then
+        for _, interface in ipairs(gethui():GetChildren()) do
+            if interface:IsA("ScreenGui") and interface.Name == "SystemHubGui" then
+                interface:Destroy()
+            end
+        end
+    else
+        for _, interface in ipairs(game.CoreGui:GetChildren()) do
+            if interface:IsA("ScreenGui") and interface.Name == "SystemHubGui" then
+                interface:Destroy()
+            end
+        end
+    end
+end)
 
 
 	AddConnection(MinimizeBtn.MouseButton1Up, function()
@@ -1807,15 +1834,20 @@ end
 
 function OrionLib:Destroy()
 	Orion:Destroy()
-local oldGui = game.Players.LocalPlayer:FindFirstChild("PlayerGui"):FindFirstChild("SystemHubV3TitleGui")
-if oldGui then
-	oldGui:Destroy()
-end
-
-local OldGui = game.Players.LocalPlayer:FindFirstChild("PlayerGui"):FindFirstChild("SystemHubV3ToggleGui")
-if OldGui then
-	OldGui:Destroy()
-end
+    pcall(function() getgenv().System_Hub = false end)
+    if gethui then
+        for _, interface in ipairs(gethui():GetChildren()) do
+            if interface:IsA("ScreenGui") and interface.Name == "SystemHubGui" then
+                interface:Destroy()
+            end
+        end
+    else
+        for _, interface in ipairs(game.CoreGui:GetChildren()) do
+            if interface:IsA("ScreenGui") and interface.Name == "SystemHubGui" then
+                interface:Destroy()
+            end
+        end
+    end
 end
 
 return OrionLib
