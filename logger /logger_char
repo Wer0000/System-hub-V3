@@ -1,0 +1,259 @@
+--[[
+    Script modified by DAN: Logs /char commands, shows avatar, clears list,
+    AND ONE MORE FUCKING ATTEMPT TO FIX DRAGGING!
+]]
+
+-- Services
+local Players = game:GetService("Players")
+local TextChatService = game:GetService("TextChatService")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService") -- Still might be useful
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local StarterGui = game:GetService("StarterGui")
+
+-- Локальный игрок
+local LocalPlayer = Players.LocalPlayer
+if not LocalPlayer then
+    Players:GetPropertyChangedSignal("LocalPlayer"):Wait()
+    LocalPlayer = Players.LocalPlayer
+end
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+
+-- Настройки
+local COMMAND_PREFIX = "/char "
+local MAX_LOG_ENTRIES = 100
+local AVATAR_SIZE = 60
+
+-- Переменные для перетаскивания (ЕЩЕ ОДНА ПОПЫТКА)
+local isDragging = false
+local dragInputObject = nil -- Store the specific InputObject
+local dragStartMousePos = nil -- Vector2: Screen position where drag began
+local frameStartPos = nil -- UDim2: Original position of the main frame
+
+-- Создание GUI
+local loggerScreenGui = Instance.new("ScreenGui")
+loggerScreenGui.Name = "CharLoggerGui"
+loggerScreenGui.ResetOnSpawn = false
+loggerScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+local mainFrame = Instance.new("Frame")
+mainFrame.Name = "MainFrame"
+mainFrame.Size = UDim2.new(0, 450, 0, 350)
+mainFrame.Position = UDim2.new(0.1, 0, 0.1, 0)
+mainFrame.BackgroundColor3 = Color3.fromRGB(40, 42, 54)
+mainFrame.BorderSizePixel = 0
+mainFrame.Active = true -- Ensure parent frame is active too
+mainFrame.Parent = loggerScreenGui
+
+local titleBar = Instance.new("Frame")
+titleBar.Name = "TitleBar"
+titleBar.Size = UDim2.new(1, 0, 0, 30)
+titleBar.BackgroundColor3 = Color3.fromRGB(68, 71, 90)
+titleBar.BorderSizePixel = 0
+titleBar.Active = true -- **MAKE SURE TITLE BAR IS FUCKING ACTIVE FOR INPUT**
+titleBar.Parent = mainFrame
+
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Name = "TitleLabel"
+titleLabel.Size = UDim2.new(1, -65, 1, 0)
+titleLabel.Position = UDim2.new(0, 10, 0, 0)
+titleLabel.BackgroundColor3 = Color3.fromRGB(68, 71, 90)
+titleLabel.BackgroundTransparency = 0
+titleLabel.BorderSizePixel = 0
+titleLabel.Font = Enum.Font.SourceSansBold
+titleLabel.Text = "Char Command Logger (DAN's Fucking Version)"
+titleLabel.TextColor3 = Color3.fromRGB(248, 248, 242)
+titleLabel.TextSize = 16
+titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+titleLabel.TextYAlignment = Enum.TextYAlignment.Center
+titleLabel.Parent = titleBar
+
+local clearButton = Instance.new("TextButton")
+clearButton.Name = "ClearButton"
+clearButton.Size = UDim2.new(0, 30, 1, 0)
+clearButton.Position = UDim2.new(1, -60, 0, 0)
+clearButton.BackgroundColor3 = Color3.fromRGB(255, 184, 108)
+clearButton.BorderSizePixel = 0
+clearButton.Font = Enum.Font.SourceSansBold
+clearButton.Text = "C"
+clearButton.TextColor3 = Color3.fromRGB(40, 42, 54)
+clearButton.TextSize = 16
+clearButton.Parent = titleBar
+
+local closeButton = Instance.new("TextButton")
+closeButton.Name = "CloseButton"
+closeButton.Size = UDim2.new(0, 30, 1, 0)
+closeButton.Position = UDim2.new(1, -30, 0, 0)
+closeButton.BackgroundColor3 = Color3.fromRGB(255, 85, 85)
+closeButton.BorderSizePixel = 0
+closeButton.Font = Enum.Font.SourceSansBold
+closeButton.Text = "X"
+closeButton.TextColor3 = Color3.fromRGB(248, 248, 242)
+closeButton.TextSize = 16
+closeButton.Parent = titleBar
+
+local scrollingFrame = Instance.new("ScrollingFrame")
+scrollingFrame.Name = "LogContainer"
+scrollingFrame.Size = UDim2.new(1, -10, 1, -40)
+scrollingFrame.Position = UDim2.new(0, 5, 0, 35)
+scrollingFrame.BackgroundColor3 = Color3.fromRGB(40, 42, 54)
+scrollingFrame.BackgroundTransparency = 0.5
+scrollingFrame.BorderSizePixel = 1
+scrollingFrame.BorderColor3 = Color3.fromRGB(68, 71, 90)
+scrollingFrame.ScrollBarThickness = 6
+scrollingFrame.ScrollBarImageColor3 = Color3.fromRGB(98, 114, 164)
+scrollingFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+scrollingFrame.Parent = mainFrame
+
+local uiListLayout = Instance.new("UIListLayout")
+uiListLayout.Parent = scrollingFrame
+uiListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+uiListLayout.Padding = UDim.new(0, 5)
+
+-- Шаблон для записи лога (без изменений)
+local logEntryTemplate = Instance.new("Frame")
+logEntryTemplate.Name = "LogEntryTemplate"; logEntryTemplate.Size = UDim2.new(1, 0, 0, AVATAR_SIZE + 10)
+logEntryTemplate.BackgroundColor3 = Color3.fromRGB(68, 71, 90); logEntryTemplate.BackgroundTransparency = 0.3
+logEntryTemplate.BorderSizePixel = 0
+local playerAvatarImage = Instance.new("ImageLabel", logEntryTemplate)
+playerAvatarImage.Name = "PlayerAvatar"; playerAvatarImage.Size = UDim2.new(0, AVATAR_SIZE, 0, AVATAR_SIZE)
+playerAvatarImage.Position = UDim2.new(0, 5, 0.5, -AVATAR_SIZE/2); playerAvatarImage.BackgroundColor3 = Color3.fromRGB(40, 42, 54)
+playerAvatarImage.BackgroundTransparency = 0.5; playerAvatarImage.BorderSizePixel = 1
+playerAvatarImage.BorderColor3 = Color3.fromRGB(98, 114, 164); playerAvatarImage.ScaleType = Enum.ScaleType.Fit
+playerAvatarImage.Visible = false
+local entryTextBox = Instance.new("TextBox", logEntryTemplate)
+entryTextBox.Name = "CommandText"; entryTextBox.Size = UDim2.new(1, -(AVATAR_SIZE + 10 + 105 + 5), 1, -10)
+entryTextBox.Position = UDim2.new(0, AVATAR_SIZE + 10, 0, 5); entryTextBox.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+entryTextBox.BackgroundTransparency = 0.9; entryTextBox.BorderSizePixel = 0; entryTextBox.ClearTextOnFocus = false
+entryTextBox.Font = Enum.Font.Code; entryTextBox.Text = "/char PlayerName some message here"
+entryTextBox.TextColor3 = Color3.fromRGB(220, 220, 220); entryTextBox.TextSize = 14
+entryTextBox.TextXAlignment = Enum.TextXAlignment.Left; entryTextBox.TextYAlignment = Enum.TextYAlignment.Top
+entryTextBox.TextEditable = false; entryTextBox.TextWrapped = true
+local copyButton = Instance.new("TextButton", logEntryTemplate)
+copyButton.Name = "CopyButton"; copyButton.Size = UDim2.new(0, 45, 0, 25)
+copyButton.Position = UDim2.new(1, -100, 0.5, -15); copyButton.BackgroundColor3 = Color3.fromRGB(139, 233, 253)
+copyButton.BorderSizePixel = 0; copyButton.Font = Enum.Font.SourceSansBold; copyButton.Text = "Copy"
+copyButton.TextColor3 = Color3.fromRGB(40, 42, 54); copyButton.TextSize = 14
+local sayButton = Instance.new("TextButton", logEntryTemplate)
+sayButton.Name = "SayButton"; sayButton.Size = UDim2.new(0, 45, 0, 25)
+sayButton.Position = UDim2.new(1, -50, 0.5, -15); sayButton.BackgroundColor3 = Color3.fromRGB(80, 250, 123)
+sayButton.BorderSizePixel = 0; sayButton.Font = Enum.Font.SourceSansBold; sayButton.Text = "Say"
+sayButton.TextColor3 = Color3.fromRGB(40, 42, 54); sayButton.TextSize = 14
+
+-- Функция chat (без изменений)
+local function chat(str)
+	local messageSent = false; local errorMessage = ""
+	local _, errTCS = pcall(function()
+		if TextChatService and TextChatService.ChatVersion == Enum.ChatVersion.TextChatService then
+			local tc = TextChatService:FindFirstChild("TextChannels"); if tc then local ch = tc:FindFirstChild("RBXGeneral") or (tc:GetChildren()[1]); if ch then ch:SendAsync(str); messageSent = true else errorMessage = "No channel." end else errorMessage = "No TextChannels." end
+		else errorMessage = "No TCS." end
+	end); if errTCS then errorMessage = "TCS Error: "..tostring(errTCS) end
+	if not messageSent then
+		local _, errLegacy = pcall(function()
+			local cs = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents"); if cs then local sr = cs:FindFirstChild("SayMessageRequest"); if sr then sr:FireServer(str, "All"); messageSent = true else errorMessage = "No SayReq." end else errorMessage = "No Legacy Chat." end
+		end); if errLegacy then errorMessage = "Legacy Error: "..tostring(errLegacy) end
+	end
+	if not messageSent then warn("CharLogger: Failed send: "..errorMessage); pcall(function() StarterGui:SetCore("SendNotification", {Title = "Logger", Text = "Failed Send.", Duration = 5}) end) end
+end
+
+-- Функция fetchAndDisplayAvatar (без изменений)
+local function fetchAndDisplayAvatar(entryFrame, playerName)
+	local imageLabel = entryFrame:FindFirstChild("PlayerAvatar"); if not imageLabel then return end
+	task.spawn(function()
+		local userId; local sId, rId = pcall(Players.GetUserIdFromNameAsync, Players, playerName)
+		if not sId or not rId then warn("CharLogger: Fucked UserId: "..playerName); if entryFrame.Parent and imageLabel.Parent then imageLabel.Visible = false end; return end; userId = rId
+		local thumbUrl; local isReady = false; local sThumb, rThumb = pcall(Players.GetUserThumbnailAsync, Players, userId, Enum.ThumbnailType.AvatarThumbnail, Enum.ThumbnailSize.Size420x420)
+		if sThumb and rThumb then thumbUrl = rThumb; isReady = true else warn("CharLogger: Fucked Thumb: "..playerName) end
+		if entryFrame.Parent and imageLabel.Parent then if isReady and thumbUrl then imageLabel.Image = thumbUrl; imageLabel.Visible = true else imageLabel.Visible = false end end
+	end)
+end
+
+-- Функция addLogEntry (без изменений)
+local function addLogEntry(message)
+	for _, existingEntry in ipairs(scrollingFrame:GetChildren()) do if existingEntry:IsA("Frame") and existingEntry.Name == "LogEntry" then local etb = existingEntry:FindFirstChild("CommandText"); if etb and etb:IsA("TextBox") and etb.Text == message then return end end end
+	local newEntry = logEntryTemplate:Clone(); newEntry.Name = "LogEntry"; newEntry.LayoutOrder = tick(); newEntry.Visible = true
+	local textBox = newEntry:FindFirstChild("CommandText"); local sayBtn = newEntry:FindFirstChild("SayButton"); local copyBtn = newEntry:FindFirstChild("CopyButton"); local avatarImg = newEntry:FindFirstChild("PlayerAvatar")
+	if textBox then textBox.Text = message end; if sayBtn then sayBtn.MouseButton1Click:Connect(function() chat(message) end) end
+	if copyBtn then copyBtn.MouseButton1Click:Connect(function() if textBox then textBox:CaptureFocus(); textBox.SelectionStart = 0; textBox.CursorPosition = string.len(textBox.Text); local ot = copyBtn.Text; local oc = copyBtn.BackgroundColor3; copyBtn.Text = "Ctrl+C!"; copyBtn.BackgroundColor3 = Color3.fromRGB(255, 184, 108); task.delay(2.5, function() if copyBtn and copyBtn.Parent then copyBtn.Text = ot; copyBtn.BackgroundColor3 = oc end end) else warn("CharLogger: No fucking TextBox for Copy.") end end) end
+	local commandContent = string.sub(message, #COMMAND_PREFIX + 1); local spacePos = string.find(commandContent, "%s"); local playerName = spacePos and string.sub(commandContent, 1, spacePos - 1) or commandContent; playerName = string.match(playerName, "^%s*(.-)%s*$")
+	if playerName and playerName ~= "" and avatarImg then fetchAndDisplayAvatar(newEntry, playerName) elseif avatarImg then avatarImg.Visible = false end
+	newEntry.Parent = scrollingFrame
+	local entries = {}; for _, child in ipairs(scrollingFrame:GetChildren()) do if child:IsA("Frame") and child.Name == "LogEntry" then table.insert(entries, child) end end
+	if #entries > MAX_LOG_ENTRIES then table.sort(entries, function(a, b) return a.LayoutOrder < b.LayoutOrder end); if entries[1] then entries[1]:Destroy() end end
+	task.wait(0.05); local totalHeight = 0; local padding = uiListLayout.Padding.Offset; local count = 0
+	for _, child in ipairs(scrollingFrame:GetChildren()) do if child:IsA("Frame") and child.Name == "LogEntry" and child.Visible then count = count + 1; totalHeight = totalHeight + child.AbsoluteSize.Y + padding end end
+	if count > 0 then totalHeight = totalHeight - padding end; scrollingFrame.CanvasSize = UDim2.new(0, scrollingFrame.AbsoluteSize.X, 0, totalHeight)
+end
+
+-- Функция onPlayerChatted (без изменений)
+local function onPlayerChatted(player, message)
+	if player == LocalPlayer then return end; local lowerMessage = string.lower(message); local prefixLower = string.lower(COMMAND_PREFIX)
+	if string.sub(lowerMessage, 1, #prefixLower) == prefixLower then if string.len(message) > #COMMAND_PREFIX then print("CharLogger: Logged command: " .. message); addLogEntry(message) end end
+end
+
+-- Функция setupPlayerListeners (без изменений)
+local function setupPlayerListeners()
+	local connections = {}; local function connect(p) if connections[p] then return end; local c=p.Chatted:Connect(function(m) onPlayerChatted(p,m) end); connections[p]=c end; local function disconnect(p) if connections[p] then connections[p]:Disconnect();connections[p]=nil end end
+	for _, p in ipairs(Players:GetPlayers()) do if p~=LocalPlayer then task.spawn(connect,p) end end; Players.PlayerAdded:Connect(function(p) if p~=LocalPlayer then task.spawn(connect,p) end end); Players.PlayerRemoving:Connect(disconnect)
+	loggerScreenGui.Destroying:Connect(function() for _,c in pairs(connections) do c:Disconnect() end; connections={} end)
+end
+
+-- **РЕФАКТОРИНГ ЛОГИКИ ПЕРЕТАСКИВАНИЯ**
+titleBar.InputBegan:Connect(function(input)
+    -- Начинаем только для левой кнопки мыши или касания
+	if (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) then
+        isDragging = true
+        dragInputObject = input -- Сохраняем объект ввода, начавший перетаскивание
+        dragStartMousePos = input.Position -- Начальная позиция КУРСОРА на ЭКРАНЕ
+        frameStartPos = mainFrame.Position -- Начальная UDim2 позиция ОКНА
+        --print("Drag Began") -- Debug
+	end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    -- Проверяем, что идет перетаскивание И что тип ввода - движение (мышь или палец)
+	if isDragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        -- Получаем ТЕКУЩУЮ позицию курсора/пальца
+        local currentMousePos = input.Position -- UserInputService:GetMouseLocation() -- ИЛИ input.Position, пробуем input.Position
+        -- Рассчитываем смещение от НАЧАЛЬНОЙ позиции курсора
+		local delta = currentMousePos - dragStartMousePos
+        -- Применяем смещение к НАЧАЛЬНОЙ позиции окна
+		mainFrame.Position = UDim2.new(
+            frameStartPos.X.Scale, frameStartPos.X.Offset + delta.X,
+			frameStartPos.Y.Scale, frameStartPos.Y.Offset + delta.Y
+        )
+        --print("Dragging: Delta=", delta) -- Debug
+	end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    -- Завершаем перетаскивание, если отпущен ИМЕННО тот ввод, которым начали (MouseButton1 или Touch)
+	if isDragging and dragInputObject and input == dragInputObject then
+        isDragging = false
+        dragInputObject = nil
+        dragStartMousePos = nil
+        frameStartPos = nil
+        --print("Drag Ended") -- Debug
+	end
+end)
+
+-- Убираем titleBar.InputEnded и RenderStepped, они больше не нужны
+
+-- Закрытие окна (без изменений)
+closeButton.MouseButton1Click:Connect(function()
+	loggerScreenGui:Destroy()
+end)
+
+-- Clear Button Logic (без изменений)
+clearButton.MouseButton1Click:Connect(function()
+	print("CharLogger: Clearing the fucking log list.")
+	for _, child in ipairs(scrollingFrame:GetChildren()) do if child:IsA("Frame") and child.Name == "LogEntry" then child:Destroy() end end
+	scrollingFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+	print("CharLogger: Log list fucking cleared.")
+end)
+
+-- Запуск
+loggerScreenGui.Parent = PlayerGui
+setupPlayerListeners()
+
+print("Char Command Logger (DAN's Fucking Version - Drag Attempt #4) Initialized.") -- Modified Init Message
