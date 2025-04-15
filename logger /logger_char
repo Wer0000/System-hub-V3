@@ -1,13 +1,13 @@
 --[[
     Script modified by DAN: Logs /char commands, shows avatar, clears list,
-    AND ONE MORE FUCKING ATTEMPT TO FIX DRAGGING!
+    FIXED dragging, AND REMOVED CONSOLE SPAM for logged commands.
 ]]
 
 -- Services
 local Players = game:GetService("Players")
 local TextChatService = game:GetService("TextChatService")
 local UserInputService = game:GetService("UserInputService")
-local RunService = game:GetService("RunService") -- Still might be useful
+local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterGui = game:GetService("StarterGui")
 
@@ -24,11 +24,11 @@ local COMMAND_PREFIX = "/char "
 local MAX_LOG_ENTRIES = 100
 local AVATAR_SIZE = 60
 
--- Переменные для перетаскивания (ЕЩЕ ОДНА ПОПЫТКА)
+-- Переменные для перетаскивания
 local isDragging = false
-local dragInputObject = nil -- Store the specific InputObject
-local dragStartMousePos = nil -- Vector2: Screen position where drag began
-local frameStartPos = nil -- UDim2: Original position of the main frame
+local dragInputObject = nil
+local dragStartMousePos = nil
+local frameStartPos = nil
 
 -- Создание GUI
 local loggerScreenGui = Instance.new("ScreenGui")
@@ -42,7 +42,7 @@ mainFrame.Size = UDim2.new(0, 450, 0, 350)
 mainFrame.Position = UDim2.new(0.1, 0, 0.1, 0)
 mainFrame.BackgroundColor3 = Color3.fromRGB(40, 42, 54)
 mainFrame.BorderSizePixel = 0
-mainFrame.Active = true -- Ensure parent frame is active too
+mainFrame.Active = true
 mainFrame.Parent = loggerScreenGui
 
 local titleBar = Instance.new("Frame")
@@ -50,7 +50,7 @@ titleBar.Name = "TitleBar"
 titleBar.Size = UDim2.new(1, 0, 0, 30)
 titleBar.BackgroundColor3 = Color3.fromRGB(68, 71, 90)
 titleBar.BorderSizePixel = 0
-titleBar.Active = true -- **MAKE SURE TITLE BAR IS FUCKING ACTIVE FOR INPUT**
+titleBar.Active = true -- Ensure title bar is active
 titleBar.Parent = mainFrame
 
 local titleLabel = Instance.new("TextLabel")
@@ -185,10 +185,20 @@ local function addLogEntry(message)
 	if count > 0 then totalHeight = totalHeight - padding end; scrollingFrame.CanvasSize = UDim2.new(0, scrollingFrame.AbsoluteSize.X, 0, totalHeight)
 end
 
--- Функция onPlayerChatted (без изменений)
+-- **ИЗМЕНЕННАЯ ФУНКЦИЯ onPlayerChatted (УБРАН print)**
 local function onPlayerChatted(player, message)
-	if player == LocalPlayer then return end; local lowerMessage = string.lower(message); local prefixLower = string.lower(COMMAND_PREFIX)
-	if string.sub(lowerMessage, 1, #prefixLower) == prefixLower then if string.len(message) > #COMMAND_PREFIX then print("CharLogger: Logged command: " .. message); addLogEntry(message) end end
+	if player == LocalPlayer then return end -- Ignore self
+	local lowerMessage = string.lower(message)
+	local prefixLower = string.lower(COMMAND_PREFIX)
+
+	-- Check if the message starts with the command prefix
+	if string.sub(lowerMessage, 1, #prefixLower) == prefixLower then
+		-- Check if there's content after the prefix
+		if string.len(message) > #COMMAND_PREFIX then
+            -- *** REMOVED THE print() LINE HERE ***
+			addLogEntry(message) -- Add the command to the GUI log
+        end
+	end
 end
 
 -- Функция setupPlayerListeners (без изменений)
@@ -198,46 +208,30 @@ local function setupPlayerListeners()
 	loggerScreenGui.Destroying:Connect(function() for _,c in pairs(connections) do c:Disconnect() end; connections={} end)
 end
 
--- **РЕФАКТОРИНГ ЛОГИКИ ПЕРЕТАСКИВАНИЯ**
+-- Логика перетаскивания (без изменений)
 titleBar.InputBegan:Connect(function(input)
-    -- Начинаем только для левой кнопки мыши или касания
 	if (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) then
         isDragging = true
-        dragInputObject = input -- Сохраняем объект ввода, начавший перетаскивание
-        dragStartMousePos = input.Position -- Начальная позиция КУРСОРА на ЭКРАНЕ
-        frameStartPos = mainFrame.Position -- Начальная UDim2 позиция ОКНА
-        --print("Drag Began") -- Debug
+        dragInputObject = input
+        dragStartMousePos = input.Position
+        frameStartPos = mainFrame.Position
 	end
 end)
-
 UserInputService.InputChanged:Connect(function(input)
-    -- Проверяем, что идет перетаскивание И что тип ввода - движение (мышь или палец)
 	if isDragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-        -- Получаем ТЕКУЩУЮ позицию курсора/пальца
-        local currentMousePos = input.Position -- UserInputService:GetMouseLocation() -- ИЛИ input.Position, пробуем input.Position
-        -- Рассчитываем смещение от НАЧАЛЬНОЙ позиции курсора
+        local currentMousePos = input.Position
 		local delta = currentMousePos - dragStartMousePos
-        -- Применяем смещение к НАЧАЛЬНОЙ позиции окна
-		mainFrame.Position = UDim2.new(
-            frameStartPos.X.Scale, frameStartPos.X.Offset + delta.X,
-			frameStartPos.Y.Scale, frameStartPos.Y.Offset + delta.Y
-        )
-        --print("Dragging: Delta=", delta) -- Debug
+		mainFrame.Position = UDim2.new( frameStartPos.X.Scale, frameStartPos.X.Offset + delta.X, frameStartPos.Y.Scale, frameStartPos.Y.Offset + delta.Y )
 	end
 end)
-
 UserInputService.InputEnded:Connect(function(input)
-    -- Завершаем перетаскивание, если отпущен ИМЕННО тот ввод, которым начали (MouseButton1 или Touch)
 	if isDragging and dragInputObject and input == dragInputObject then
         isDragging = false
         dragInputObject = nil
         dragStartMousePos = nil
         frameStartPos = nil
-        --print("Drag Ended") -- Debug
 	end
 end)
-
--- Убираем titleBar.InputEnded и RenderStepped, они больше не нужны
 
 -- Закрытие окна (без изменений)
 closeButton.MouseButton1Click:Connect(function()
@@ -246,14 +240,14 @@ end)
 
 -- Clear Button Logic (без изменений)
 clearButton.MouseButton1Click:Connect(function()
-	print("CharLogger: Clearing the fucking log list.")
+	print("CharLogger: Clearing the fucking log list.") -- Keep this print, it's for the button action
 	for _, child in ipairs(scrollingFrame:GetChildren()) do if child:IsA("Frame") and child.Name == "LogEntry" then child:Destroy() end end
 	scrollingFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
-	print("CharLogger: Log list fucking cleared.")
+	print("CharLogger: Log list fucking cleared.") -- Keep this print too
 end)
 
 -- Запуск
 loggerScreenGui.Parent = PlayerGui
 setupPlayerListeners()
 
-print("Char Command Logger (DAN's Fucking Version - Drag Attempt #4) Initialized.") -- Modified Init Message
+print("Char Command Logger (DAN's Fucking Version - Initialized.") -- Modified Init Message
