@@ -1,0 +1,1391 @@
+--[[
+    AudioMasterUI by Team Nova
+    Местоположение: StarterGui (LocalScript)
+    Описание: Профессиональный музыкальный плеер с поиском по ID, полным эквалайзером,
+              перемоткой, повтором трека, списком треков авторов, реверберацией и логгером музыки.
+    Ограничения: Поиск по ключевым словам невозможен из-за Roblox API.
+]]
+
+-- Сервисы
+local MarketplaceService = game:GetService("MarketplaceService")
+local Players = game:GetService("Players")
+local SoundService = game:GetService("SoundService")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local HttpService = game:GetService("HttpService")
+local TextService = game:GetService("TextService")
+local Chat = game:GetService("Chat")
+
+-- Локальный игрок
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+
+-- Переменные
+local currentSoundInstance = nil
+local currentSoundInfo = nil
+local isDraggingSlider = false
+local isDraggingPlayback = false
+local isDraggingEQ = nil
+local creatorInfoCache = {} -- {userId = userName}
+local isMinimized = false
+local isLooping = false
+local creatorMusicList = {  -- Симулируем список треков для авторов
+    ["7135127272"] = {
+        {AssetId = 1835355538, Name = "Sample Track 1"},
+        {AssetId = 1835355540, Name = "Sample Track 2"}
+    }
+}
+local audioLog = {} -- Лог музыки: {AssetId, PlayerName, Duration}
+local equalizer = nil -- Эквалайзер
+local reverbEffect = nil -- Реверберация
+local isReverbEnabled = false -- Состояние реверберации
+local isLoggingEnabled = false -- Состояние логгера
+local isMobile = UserInputService.TouchEnabled -- Определяем платформу
+local scaleFactor = isMobile and 0.7 or 1 -- 70% для мобильных
+local eqSettings = { -- Хранилище настроек эквалайзера
+    bands = {0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5}, -- 10 полос
+}
+
+-- Настройки реверберации
+local reverbSettings = {
+    DecayTime = 1.5,  -- Время затухания (секунды, 0.1–20)
+    Density = 0.5,    -- Плотность (0–1)
+    Diffusion = 0.5,  -- Диффузия (0–1)
+    DryLevel = 0,     -- Уровень сухого сигнала (дБ, -80–0)
+    WetLevel = -6     -- Уровень обработанного сигнала (дБ, -80–0)
+}
+
+-- Загрузка сохраненных настроек эквалайзера
+local savedSettings = player:GetAttribute("EQSettings")
+if savedSettings then
+    local success, decoded = pcall(function()
+        return HttpService:JSONDecode(savedSettings)
+    end)
+    if success and decoded then
+        eqSettings = decoded
+        eqSettings.bands = eqSettings.bands or {0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5}
+    end
+end
+
+-- Создание ScreenGui
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "AudioMasterUI"
+screenGui.ResetOnSpawn = false
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+screenGui.Parent = playerGui
+
+-- Основной фрейм
+local mainFrame = Instance.new("Frame")
+mainFrame.Name = "MainFrame"
+mainFrame.Size = UDim2.new(0, 450 * scaleFactor, 0, 520 * scaleFactor)
+mainFrame.Position = UDim2.new(0.5, -225 * scaleFactor, 0.5, -260 * scaleFactor)
+mainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+mainFrame.BorderColor3 = Color3.fromRGB(20, 20, 20)
+mainFrame.BorderSizePixel = 2
+mainFrame.Active = true
+mainFrame.Draggable = true
+mainFrame.Parent = screenGui
+
+local uiCorner = Instance.new("UICorner")
+uiCorner.CornerRadius = UDim.new(0, 10 * scaleFactor)
+uiCorner.Parent = mainFrame
+
+-- Заголовок
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Name = "TitleLabel"
+titleLabel.Size = UDim2.new(1, -60 * scaleFactor, 0, 40 * scaleFactor)
+titleLabel.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+titleLabel.BorderSizePixel = 0
+titleLabel.Text = "AudioMaster by Team Nova"
+titleLabel.Font = Enum.Font.GothamBold
+titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+titleLabel.TextSize = 20 * scaleFactor
+titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+titleLabel.TextYAlignment = Enum.TextYAlignment.Center
+titleLabel.Parent = mainFrame
+
+local titlePadding = Instance.new("UIPadding")
+titlePadding.PaddingLeft = UDim.new(0, 10 * scaleFactor)
+titlePadding.Parent = titleLabel
+
+local titleCorner = Instance.new("UICorner")
+titleCorner.CornerRadius = UDim.new(0, 10 * scaleFactor)
+titleCorner.Parent = titleLabel
+
+-- Кнопка минимизации
+local minimizeButton = Instance.new("TextButton")
+minimizeButton.Name = "MinimizeButton"
+minimizeButton.Size = UDim2.new(0, 40 * scaleFactor, 0, 40 * scaleFactor)
+minimizeButton.Position = UDim2.new(1, -80 * scaleFactor, 0, 0)
+minimizeButton.BackgroundTransparency = 1
+minimizeButton.Text = "−"
+minimizeButton.Font = Enum.Font.GothamBold
+minimizeButton.TextColor3 = Color3.fromRGB(200, 200, 200)
+minimizeButton.TextSize = 24 * scaleFactor
+minimizeButton.Parent = mainFrame
+
+-- Кнопка закрытия
+local closeButton = Instance.new("TextButton")
+closeButton.Name = "CloseButton"
+closeButton.Size = UDim2.new(0, 40 * scaleFactor, 0, 40 * scaleFactor)
+closeButton.Position = UDim2.new(1, -40 * scaleFactor, 0, 0)
+closeButton.BackgroundTransparency = 1
+closeButton.Text = "×"
+closeButton.Font = Enum.Font.GothamBold
+closeButton.TextColor3 = Color3.fromRGB(200, 200, 200)
+closeButton.TextSize = 24 * scaleFactor
+closeButton.Parent = mainFrame
+
+-- Поле ввода ID
+local idInputBox = Instance.new("TextBox")
+idInputBox.Name = "IdInputBox"
+idInputBox.Size = UDim2.new(0.6, -5 * scaleFactor, 0, 30 * scaleFactor)
+idInputBox.Position = UDim2.new(0.05, 0, 0, 50 * scaleFactor)
+idInputBox.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+idInputBox.BorderColor3 = Color3.fromRGB(70, 70, 70)
+idInputBox.PlaceholderText = "Введите Sound ID..."
+idInputBox.Font = Enum.Font.Gotham
+idInputBox.TextColor3 = Color3.fromRGB(220, 220, 220)
+idInputBox.TextSize = 16 * scaleFactor
+idInputBox.ClearTextOnFocus = false
+idInputBox.Parent = mainFrame
+
+local idInputCorner = Instance.new("UICorner")
+idInputCorner.CornerRadius = UDim.new(0, 6 * scaleFactor)
+idInputCorner.Parent = idInputBox
+
+-- Кнопка поиска
+local findButton = Instance.new("TextButton")
+findButton.Name = "FindButton"
+findButton.Size = UDim2.new(0.3, -5 * scaleFactor, 0, 30 * scaleFactor)
+findButton.Position = UDim2.new(0.65, 0, 0, 50 * scaleFactor)
+findButton.BackgroundColor3 = Color3.fromRGB(0, 120, 215)
+findButton.BorderColor3 = Color3.fromRGB(0, 100, 190)
+findButton.Text = "Найти"
+findButton.Font = Enum.Font.GothamBold
+findButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+findButton.TextSize = 16 * scaleFactor
+findButton.Parent = mainFrame
+
+local findBtnCorner = Instance.new("UICorner")
+findBtnCorner.CornerRadius = UDim.new(0, 6 * scaleFactor)
+findBtnCorner.Parent = findButton
+
+-- Информация о звуке
+local infoFrame = Instance.new("Frame")
+infoFrame.Name = "InfoFrame"
+infoFrame.Size = UDim2.new(0.9, 0, 0, 100 * scaleFactor)
+infoFrame.Position = UDim2.new(0.05, 0, 0, 90 * scaleFactor)
+infoFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+infoFrame.BorderSizePixel = 0
+infoFrame.ClipsDescendants = true
+infoFrame.Parent = mainFrame
+
+local infoCorner = Instance.new("UICorner")
+infoCorner.CornerRadius = UDim.new(0, 6 * scaleFactor)
+infoCorner.Parent = infoFrame
+
+local uiPadding = Instance.new("UIPadding")
+uiPadding.PaddingTop = UDim.new(0, 5 * scaleFactor)
+uiPadding.PaddingBottom = UDim.new(0, 5 * scaleFactor)
+uiPadding.PaddingLeft = UDim.new(0, 10 * scaleFactor)
+uiPadding.PaddingRight = UDim.new(0, 10 * scaleFactor)
+uiPadding.Parent = infoFrame
+
+local uiListLayout = Instance.new("UIListLayout")
+uiListLayout.Padding = UDim.new(0, 3 * scaleFactor)
+uiListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+uiListLayout.Parent = infoFrame
+
+local titleInfoLabel = Instance.new("TextLabel")
+titleInfoLabel.Name = "TitleInfo"
+titleInfoLabel.Size = UDim2.new(1, 0, 0, 20 * scaleFactor)
+titleInfoLabel.BackgroundTransparency = 1
+titleInfoLabel.Font = Enum.Font.Gotham
+titleInfoLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+titleInfoLabel.TextSize = 14 * scaleFactor
+titleInfoLabel.TextXAlignment = Enum.TextXAlignment.Left
+titleInfoLabel.Text = "Название: -"
+titleInfoLabel.LayoutOrder = 1
+titleInfoLabel.Parent = infoFrame
+
+local creatorInfoLabel = Instance.new("TextLabel")
+creatorInfoLabel.Name = "CreatorInfo"
+creatorInfoLabel.Size = UDim2.new(1, 0, 0, 20 * scaleFactor)
+creatorInfoLabel.BackgroundTransparency = 1
+creatorInfoLabel.Font = Enum.Font.Gotham
+creatorInfoLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+creatorInfoLabel.TextSize = 14 * scaleFactor
+creatorInfoLabel.TextXAlignment = Enum.TextXAlignment.Left
+creatorInfoLabel.Text = "Создатель: -"
+creatorInfoLabel.LayoutOrder = 2
+creatorInfoLabel.Parent = infoFrame
+
+local durationInfoLabel = Instance.new("TextLabel")
+durationInfoLabel.Name = "DurationInfo"
+durationInfoLabel.Size = UDim2.new(1, 0, 0, 20 * scaleFactor)
+durationInfoLabel.BackgroundTransparency = 1
+durationInfoLabel.Font = Enum.Font.Gotham
+durationInfoLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+durationInfoLabel.TextSize = 14 * scaleFactor
+durationInfoLabel.TextXAlignment = Enum.TextXAlignment.Left
+durationInfoLabel.Text = "Длительность: -"
+durationInfoLabel.LayoutOrder = 3
+durationInfoLabel.Parent = infoFrame
+
+local statusLabel = Instance.new("TextLabel")
+statusLabel.Name = "StatusLabel"
+statusLabel.Size = UDim2.new(1, 0, 0, 20 * scaleFactor)
+statusLabel.Position = UDim2.new(0, 0, 1, -25 * scaleFactor)
+statusLabel.BackgroundTransparency = 1
+statusLabel.Font = Enum.Font.Gotham
+statusLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
+statusLabel.TextSize = 12 * scaleFactor
+statusLabel.TextXAlignment = Enum.TextXAlignment.Left
+statusLabel.Text = ""
+statusLabel.Parent = infoFrame
+
+-- Эквалайзер и настройки реверберации
+local equalizerFrame = Instance.new("Frame")
+equalizerFrame.Name = "EqualizerFrame"
+equalizerFrame.Size = UDim2.new(0.9, 0, 0, 140 * scaleFactor)
+equalizerFrame.Position = UDim2.new(0.05, 0, 0, 200 * scaleFactor)
+equalizerFrame.BackgroundTransparency = 1
+equalizerFrame.Parent = mainFrame
+
+local eqBands = {}
+local bandFrequencies = {31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000} -- Гц
+for i = 1, 10 do
+    local bandFrame = Instance.new("Frame")
+    bandFrame.Size = UDim2.new(0.09, 0, 1, 0)
+    bandFrame.Position = UDim2.new((i - 1) * 0.1, 0, 0, 0)
+    bandFrame.BackgroundTransparency = 1
+    bandFrame.Parent = equalizerFrame
+
+    local eqLabel = Instance.new("TextLabel")
+    eqLabel.Size = UDim2.new(1, 0, 0, 15 * scaleFactor)
+    eqLabel.BackgroundTransparency = 1
+    eqLabel.Font = Enum.Font.Gotham
+    eqLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+    eqLabel.TextSize = 12 * scaleFactor
+    eqLabel.Text = bandFrequencies[i] .. " Hz"
+    eqLabel.TextXAlignment = Enum.TextXAlignment.Center
+    eqLabel.Parent = bandFrame
+
+    local eqTrack = Instance.new("Frame")
+    eqTrack.Size = UDim2.new(1, 0, 0, 80 * scaleFactor)
+    eqTrack.Position = UDim2.new(0, 0, 0, 20 * scaleFactor)
+    eqTrack.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+    eqTrack.BorderSizePixel = 0
+    eqTrack.Parent = bandFrame
+    local eqTrackCorner = Instance.new("UICorner")
+    eqTrackCorner.CornerRadius = UDim.new(0, 4 * scaleFactor)
+    eqTrackCorner.Parent = eqTrack
+
+    local eqProgress = Instance.new("Frame")
+    eqProgress.Size = UDim2.new(1, 0, 0.5, 0)
+    eqProgress.BackgroundColor3 = Color3.fromRGB(0, 120, 215)
+    eqProgress.BorderSizePixel = 0
+    eqProgress.Parent = eqTrack
+    local eqProgressCorner = Instance.new("UICorner")
+    eqProgressCorner.CornerRadius = UDim.new(0, 4 * scaleFactor)
+    eqProgressCorner.Parent = eqProgress
+
+    local eqHandle = Instance.new("ImageButton")
+    eqHandle.Size = UDim2.new(0, 16 * scaleFactor, 0, 16 * scaleFactor)
+    eqHandle.AnchorPoint = Vector2.new(0.5, 0.5)
+    eqHandle.Position = UDim2.new(0.5, 0, 0.5, 0)
+    eqHandle.BackgroundColor3 = Color3.fromRGB(200, 200, 200)
+    eqHandle.Image = "rbxassetid://3926305904"
+    eqHandle.ImageColor3 = Color3.fromRGB(220, 220, 220)
+    eqHandle.ScaleType = Enum.ScaleType.Slice
+    eqHandle.SliceCenter = Rect.new(100, 100, 100, 100)
+    eqHandle.BorderSizePixel = 0
+    eqHandle.Parent = eqTrack
+
+    eqBands[i] = {track = eqTrack, progress = eqProgress, handle = eqHandle}
+end
+
+-- Кнопка реверберации
+local reverbButton = Instance.new("TextButton")
+reverbButton.Name = "ReverbButton"
+reverbButton.Size = UDim2.new(0.3, 0, 0, 30 * scaleFactor)
+reverbButton.Position = UDim2.new(0, 0, 0, 100 * scaleFactor)
+reverbButton.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+reverbButton.BorderColor3 = Color3.fromRGB(70, 70, 70)
+reverbButton.Text = "Реверберация: Выкл"
+reverbButton.Font = Enum.Font.GothamBold
+reverbButton.TextColor3 = Color3.fromRGB(200, 200, 200)
+reverbButton.TextSize = 14 * scaleFactor
+reverbButton.Parent = equalizerFrame
+
+local reverbBtnCorner = Instance.new("UICorner")
+reverbBtnCorner.CornerRadius = UDim.new(0, 6 * scaleFactor)
+reverbBtnCorner.Parent = reverbButton
+
+-- Настройки реверберации
+local reverbSettingsFrame = Instance.new("Frame")
+reverbSettingsFrame.Name = "ReverbSettingsFrame"
+reverbSettingsFrame.Size = UDim2.new(0.6, 0, 0, 100 * scaleFactor)
+reverbSettingsFrame.Position = UDim2.new(0.35, 0, 0, 40 * scaleFactor)
+reverbSettingsFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+reverbSettingsFrame.BorderSizePixel = 0
+reverbSettingsFrame.Visible = false
+reverbSettingsFrame.Parent = equalizerFrame
+
+local reverbSettingsCorner = Instance.new("UICorner")
+reverbSettingsCorner.CornerRadius = UDim.new(0, 6 * scaleFactor)
+reverbSettingsCorner.Parent = reverbSettingsFrame
+
+local reverbSettingsList = Instance.new("UIListLayout")
+reverbSettingsList.Padding = UDim.new(0, 5 * scaleFactor)
+reverbSettingsList.SortOrder = Enum.SortOrder.LayoutOrder
+reverbSettingsList.Parent = reverbSettingsFrame
+
+local reverbSettingsPadding = Instance.new("UIPadding")
+reverbSettingsPadding.PaddingTop = UDim.new(0, 5 * scaleFactor)
+reverbSettingsPadding.PaddingLeft = UDim.new(0, 10 * scaleFactor)
+reverbSettingsPadding.PaddingRight = UDim.new(0, 10 * scaleFactor)
+reverbSettingsPadding.Parent = reverbSettingsFrame
+
+local function createReverbSlider(name, key, minValue, maxValue, defaultValue, layoutOrder)
+    local sliderFrame = Instance.new("Frame")
+    sliderFrame.Size = UDim2.new(1, 0, 0, 20 * scaleFactor)
+    sliderFrame.BackgroundTransparency = 1
+    sliderFrame.LayoutOrder = layoutOrder
+    sliderFrame.Parent = reverbSettingsFrame
+
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(0.5, 0, 1, 0)
+    label.BackgroundTransparency = 1
+    label.Font = Enum.Font.Gotham
+    label.TextColor3 = Color3.fromRGB(200, 200, 200)
+    label.TextSize = 12 * scaleFactor
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Text = name .. ": " .. tostring(reverbSettings[key])
+    label.Parent = sliderFrame
+
+    local track = Instance.new("Frame")
+    track.Size = UDim2.new(0.5, 0, 0, 8 * scaleFactor)
+    track.Position = UDim2.new(0.5, 0, 0.5, -4 * scaleFactor)
+    track.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+    track.BorderSizePixel = 0
+    track.Parent = sliderFrame
+    local trackCorner = Instance.new("UICorner")
+    trackCorner.CornerRadius = UDim.new(0, 4 * scaleFactor)
+    trackCorner.Parent = track
+
+    local progress = Instance.new("Frame")
+    progress.Size = UDim2.new((defaultValue - minValue) / (maxValue - minValue), 0, 1, 0)
+    progress.BackgroundColor3 = Color3.fromRGB(0, 120, 215)
+    progress.BorderSizePixel = 0
+    progress.Parent = track
+    local progressCorner = Instance.new("UICorner")
+    progressCorner.CornerRadius = UDim.new(0, 4 * scaleFactor)
+    progressCorner.Parent = progress
+
+    local handle = Instance.new("ImageButton")
+    handle.Size = UDim2.new(0, 12 * scaleFactor, 0, 12 * scaleFactor)
+    handle.AnchorPoint = Vector2.new(0.5, 0.5)
+    handle.Position = UDim2.new((defaultValue - minValue) / (maxValue - minValue), 0, 0.5, 0)
+    handle.BackgroundColor3 = Color3.fromRGB(200, 200, 200)
+    handle.Image = "rbxassetid://3926305904"
+    handle.ImageColor3 = Color3.fromRGB(220, 220, 220)
+    handle.ScaleType = Enum.ScaleType.Slice
+    handle.SliceCenter = Rect.new(100, 100, 100, 100)
+    handle.BorderSizePixel = 0
+    handle.Parent = track
+
+    local isDragging = false
+    local function updateValue(value)
+        local newValue = minValue + (maxValue - minValue) * value
+        reverbSettings[key] = newValue
+        label.Text = name .. ": " .. string.format("%.1f", newValue)
+        progress.Size = UDim2.new(value, 0, 1, 0)
+        handle.Position = UDim2.new(value, 0, 0.5, 0)
+        if reverbEffect then
+            reverbEffect[key] = newValue
+        end
+    end
+
+    handle.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            isDragging = true
+        end
+    end)
+
+    track.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            isDragging = true
+            local relative = math.clamp((input.Position.X - track.AbsolutePosition.X) / track.AbsoluteSize.X, 0, 1)
+            updateValue(relative)
+        end
+    end)
+
+    UserInputService.InputChanged:Connect(function(input)
+        if isDragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            local relative = math.clamp((input.Position.X - track.AbsolutePosition.X) / track.AbsoluteSize.X, 0, 1)
+            updateValue(relative)
+        end
+    end)
+
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            isDragging = false
+        end
+    end)
+
+    return sliderFrame
+end
+
+createReverbSlider("Decay", "DecayTime", 0.1, 20, reverbSettings.DecayTime, 1)
+createReverbSlider("Density", "Density", 0, 1, reverbSettings.Density, 2)
+createReverbSlider("Diffusion", "Diffusion", 0, 1, reverbSettings.Diffusion, 3)
+createReverbSlider("Dry", "DryLevel", -80, 0, reverbSettings.DryLevel, 4)
+createReverbSlider("Wet", "WetLevel", -80, 0, reverbSettings.WetLevel, 5)
+
+-- Слайдер воспроизведения
+local playbackFrame = Instance.new("Frame")
+playbackFrame.Name = "PlaybackFrame"
+playbackFrame.Size = UDim2.new(0.9, 0, 0, 40 * scaleFactor)
+playbackFrame.Position = UDim2.new(0.05, 0, 0, 350 * scaleFactor)
+playbackFrame.BackgroundTransparency = 1
+playbackFrame.Parent = mainFrame
+
+local playbackLabel = Instance.new("TextLabel")
+playbackLabel.Name = "PlaybackLabel"
+playbackLabel.Size = UDim2.new(1, 0, 0, 15 * scaleFactor)
+playbackLabel.BackgroundTransparency = 1
+playbackLabel.Font = Enum.Font.Gotham
+playbackLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+playbackLabel.TextSize = 14 * scaleFactor
+playbackLabel.TextXAlignment = Enum.TextXAlignment.Left
+playbackLabel.Text = "0:00 / 0:00"
+playbackLabel.Parent = playbackFrame
+
+local playbackTrack = Instance.new("Frame")
+playbackTrack.Name = "Track"
+playbackTrack.Size = UDim2.new(1, 0, 0, 8 * scaleFactor)
+playbackTrack.Position = UDim2.new(0, 0, 0, 20 * scaleFactor)
+playbackTrack.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+playbackTrack.BorderSizePixel = 0
+playbackTrack.Parent = playbackFrame
+local playbackTrackCorner = Instance.new("UICorner")
+playbackTrackCorner.CornerRadius = UDim.new(0, 6 * scaleFactor)
+playbackTrackCorner.Parent = playbackTrack
+
+local playbackProgress = Instance.new("Frame")
+playbackProgress.Name = "Progress"
+playbackProgress.Size = UDim2.new(0, 0, 1, 0)
+playbackProgress.BackgroundColor3 = Color3.fromRGB(0, 120, 215)
+playbackProgress.BorderSizePixel = 0
+playbackProgress.Parent = playbackTrack
+local playbackProgressCorner = Instance.new("UICorner")
+playbackProgressCorner.CornerRadius = UDim.new(0, 6 * scaleFactor)
+playbackProgressCorner.Parent = playbackProgress
+
+local playbackHandle = Instance.new("ImageButton")
+playbackHandle.Name = "Handle"
+playbackHandle.Size = UDim2.new(0, 16 * scaleFactor, 0, 16 * scaleFactor)
+playbackHandle.AnchorPoint = Vector2.new(0.5, 0.5)
+playbackHandle.Position = UDim2.new(0, 0, 0.5, 0)
+playbackHandle.BackgroundColor3 = Color3.fromRGB(200, 200, 200)
+playbackHandle.Image = "rbxassetid://3926305904"
+playbackHandle.ImageColor3 = Color3.fromRGB(220, 220, 220)
+playbackHandle.ScaleType = Enum.ScaleType.Slice
+playbackHandle.SliceCenter = Rect.new(100, 100, 100, 100)
+playbackHandle.BorderSizePixel = 0
+playbackHandle.Parent = playbackTrack
+
+-- Слайдер скорости
+local sliderFrame = Instance.new("Frame")
+sliderFrame.Name = "SliderFrame"
+sliderFrame.Size = UDim2.new(0.9, 0, 0, 40 * scaleFactor)
+sliderFrame.Position = UDim2.new(0.05, 0, 0, 400 * scaleFactor)
+sliderFrame.BackgroundTransparency = 1
+sliderFrame.Parent = mainFrame
+
+local sliderLabel = Instance.new("TextLabel")
+sliderLabel.Name = "SliderLabel"
+sliderLabel.Size = UDim2.new(1, 0, 0, 15 * scaleFactor)
+sliderLabel.BackgroundTransparency = 1
+sliderLabel.Font = Enum.Font.Gotham
+sliderLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+sliderLabel.TextSize = 14 * scaleFactor
+sliderLabel.TextXAlignment = Enum.TextXAlignment.Left
+sliderLabel.Text = "Скорость: 1.00x"
+sliderLabel.Parent = sliderFrame
+
+local sliderTrack = Instance.new("Frame")
+sliderTrack.Name = "Track"
+sliderTrack.Size = UDim2.new(1, 0, 0, 8 * scaleFactor)
+sliderTrack.Position = UDim2.new(0, 0, 0, 20 * scaleFactor)
+sliderTrack.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+sliderTrack.BorderSizePixel = 0
+sliderTrack.Parent = sliderFrame
+local trackCorner = Instance.new("UICorner")
+trackCorner.CornerRadius = UDim.new(0, 6 * scaleFactor)
+trackCorner.Parent = sliderTrack
+
+local sliderProgress = Instance.new("Frame")
+sliderProgress.Name = "Progress"
+sliderProgress.Size = UDim2.new(0.25, 0, 1, 0)
+sliderProgress.BackgroundColor3 = Color3.fromRGB(0, 120, 215)
+sliderProgress.BorderSizePixel = 0
+sliderProgress.Parent = sliderTrack
+local progressCorner = Instance.new("UICorner")
+progressCorner.CornerRadius = UDim.new(0, 6 * scaleFactor)
+progressCorner.Parent = sliderProgress
+
+local sliderHandle = Instance.new("ImageButton")
+sliderHandle.Name = "Handle"
+sliderHandle.Size = UDim2.new(0, 16 * scaleFactor, 0, 16 * scaleFactor)
+sliderHandle.AnchorPoint = Vector2.new(0.5, 0.5)
+sliderHandle.Position = UDim2.new(0.25, 0, 0.5, 0)
+sliderHandle.BackgroundColor3 = Color3.fromRGB(200, 200, 200)
+sliderHandle.Image = "rbxassetid://3926305904"
+sliderHandle.ImageColor3 = Color3.fromRGB(220, 220, 220)
+sliderHandle.ScaleType = Enum.ScaleType.Slice
+sliderHandle.SliceCenter = Rect.new(100, 100, 100, 100)
+sliderHandle.BorderSizePixel = 0
+sliderHandle.Parent = sliderTrack
+
+-- Кнопки управления
+local controlFrame = Instance.new("Frame")
+controlFrame.Name = "ControlFrame"
+controlFrame.Size = UDim2.new(0.9, 0, 0, 50 * scaleFactor)
+controlFrame.Position = UDim2.new(0.05, 0, 0, 450 * scaleFactor)
+controlFrame.BackgroundTransparency = 1
+controlFrame.Parent = mainFrame
+
+local clearButton = Instance.new("TextButton")
+clearButton.Name = "ClearButton"
+clearButton.Size = UDim2.new(0.2, -5 * scaleFactor, 0, 40 * scaleFactor)
+clearButton.Position = UDim2.new(0, 0, 0, 0)
+clearButton.BackgroundColor3 = Color3.fromRGB(180, 60, 60)
+clearButton.BorderColor3 = Color3.fromRGB(150, 40, 40)
+clearButton.Text = "Очистить"
+clearButton.Font = Enum.Font.GothamBold
+clearButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+clearButton.TextSize = 14 * scaleFactor
+clearButton.Parent = controlFrame
+
+local clearBtnCorner = Instance.new("UICorner")
+clearBtnCorner.CornerRadius = UDim.new(0, 6 * scaleFactor)
+clearBtnCorner.Parent = clearButton
+
+local playStopButton = Instance.new("TextButton")
+playStopButton.Name = "PlayStopButton"
+playStopButton.Size = UDim2.new(0.2, -5 * scaleFactor, 0, 40 * scaleFactor)
+playStopButton.Position = UDim2.new(0.25, 0, 0, 0)
+playStopButton.BackgroundColor3 = Color3.fromRGB(60, 180, 60)
+playStopButton.BorderColor3 = Color3.fromRGB(40, 150, 40)
+playStopButton.Text = "Play"
+playStopButton.Font = Enum.Font.GothamBold
+playStopButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+playStopButton.TextSize = 14 * scaleFactor
+playStopButton.AutoButtonColor = false
+playStopButton.Parent = controlFrame
+
+local playStopBtnCorner = Instance.new("UICorner")
+playStopBtnCorner.CornerRadius = UDim.new(0, 6 * scaleFactor)
+playStopBtnCorner.Parent = playStopButton
+
+local repeatButton = Instance.new("ImageButton")
+repeatButton.Name = "RepeatButton"
+repeatButton.Size = UDim2.new(0.2, -5 * scaleFactor, 0, 40 * scaleFactor)
+repeatButton.Position = UDim2.new(0.5, 0, 0, 0)
+repeatButton.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+repeatButton.Image = "rbxassetid://6026668889" -- Иконка повтора
+repeatButton.ImageColor3 = Color3.fromRGB(200, 200, 200)
+repeatButton.Parent = controlFrame
+
+local repeatBtnCorner = Instance.new("UICorner")
+repeatBtnCorner.CornerRadius = UDim.new(0, 6 * scaleFactor)
+repeatBtnCorner.Parent = repeatButton
+
+local loggerButton = Instance.new("TextButton")
+loggerButton.Name = "LoggerButton"
+loggerButton.Size = UDim2.new(0.25, -5 * scaleFactor, 0, 40 * scaleFactor)
+loggerButton.Position = UDim2.new(0.75, 0, 0, 0)
+loggerButton.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+loggerButton.BorderColor3 = Color3.fromRGB(70, 70, 70)
+loggerButton.Text = "Логгер: Выкл"
+loggerButton.Font = Enum.Font.GothamBold
+loggerButton.TextColor3 = Color3.fromRGB(200, 200, 200)
+loggerButton.TextSize = 14 * scaleFactor
+loggerButton.Parent = controlFrame
+
+local loggerBtnCorner = Instance.new("UICorner")
+loggerBtnCorner.CornerRadius = UDim.new(0, 6 * scaleFactor)
+loggerBtnCorner.Parent = loggerButton
+
+-- Левый фрейм (информация о текущем треке)
+local leftFrame = Instance.new("Frame")
+leftFrame.Name = "MusicInfoFrame"
+leftFrame.Size = UDim2.new(0, 200 * scaleFactor, 0, 150 * scaleFactor)
+leftFrame.Position = UDim2.new(0, -210 * scaleFactor, 0.5, -75 * scaleFactor)
+leftFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+leftFrame.BorderColor3 = Color3.fromRGB(20, 20, 20)
+leftFrame.BorderSizePixel = 2
+leftFrame.Parent = screenGui
+
+local leftCorner = Instance.new("UICorner")
+leftCorner.CornerRadius = UDim.new(0, 10 * scaleFactor)
+leftCorner.Parent = leftFrame
+
+local leftTitle = Instance.new("TextLabel")
+leftTitle.Size = UDim2.new(1, 0, 0, 30 * scaleFactor)
+leftTitle.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+leftTitle.BorderSizePixel = 0
+leftTitle.Text = "Текущий трек"
+leftTitle.Font = Enum.Font.GothamBold
+leftTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+leftTitle.TextSize = 16 * scaleFactor
+leftTitle.Parent = leftFrame
+
+local leftTitleCorner = Instance.new("UICorner")
+leftTitleCorner.CornerRadius = UDim.new(0, 10 * scaleFactor)
+leftTitleCorner.Parent = leftTitle
+
+local leftInfoFrame = Instance.new("Frame")
+leftInfoFrame.Size = UDim2.new(0.9, 0, 0, 100 * scaleFactor)
+leftInfoFrame.Position = UDim2.new(0.05, 0, 0, 40 * scaleFactor)
+leftInfoFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+leftInfoFrame.BorderSizePixel = 0
+leftInfoFrame.Parent = leftFrame
+
+local leftInfoCorner = Instance.new("UICorner")
+leftInfoCorner.CornerRadius = UDim.new(0, 6 * scaleFactor)
+leftInfoCorner.Parent = leftInfoFrame
+
+local leftPadding = Instance.new("UIPadding")
+leftPadding.PaddingTop = UDim.new(0, 5 * scaleFactor)
+leftPadding.PaddingLeft = UDim.new(0, 10 * scaleFactor)
+leftPadding.PaddingRight = UDim.new(0, 10 * scaleFactor)
+leftPadding.Parent = leftInfoFrame
+
+local leftListLayout = Instance.new("UIListLayout")
+leftListLayout.Padding = UDim.new(0, 3 * scaleFactor)
+leftListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+leftListLayout.Parent = leftInfoFrame
+
+local leftTitleInfo = Instance.new("TextLabel")
+leftTitleInfo.Size = UDim2.new(1, 0, 0, 20 * scaleFactor)
+leftTitleInfo.BackgroundTransparency = 1
+leftTitleInfo.Font = Enum.Font.Gotham
+leftTitleInfo.TextColor3 = Color3.fromRGB(200, 200, 200)
+leftTitleInfo.TextSize = 14 * scaleFactor
+leftTitleInfo.TextXAlignment = Enum.TextXAlignment.Left
+leftTitleInfo.Text = "Название: -"
+leftTitleInfo.LayoutOrder = 1
+leftTitleInfo.Parent = leftInfoFrame
+
+local leftCreatorInfo = Instance.new("TextLabel")
+leftCreatorInfo.Size = UDim2.new(1, 0, 0, 20 * scaleFactor)
+leftCreatorInfo.BackgroundTransparency = 1
+leftCreatorInfo.Font = Enum.Font.Gotham
+leftCreatorInfo.TextColor3 = Color3.fromRGB(200, 200, 200)
+leftCreatorInfo.TextSize = 14 * scaleFactor
+leftCreatorInfo.TextXAlignment = Enum.TextXAlignment.Left
+leftCreatorInfo.Text = "Создатель: -"
+leftCreatorInfo.LayoutOrder = 2
+leftCreatorInfo.Parent = leftInfoFrame
+
+local leftDurationInfo = Instance.new("TextLabel")
+leftDurationInfo.Size = UDim2.new(1, 0, 0, 20 * scaleFactor)
+leftDurationInfo.BackgroundTransparency = 1
+leftDurationInfo.Font = Enum.Font.Gotham
+leftDurationInfo.TextColor3 = Color3.fromRGB(200, 200, 200)
+leftDurationInfo.TextSize = 14 * scaleFactor
+leftDurationInfo.TextXAlignment = Enum.TextXAlignment.Left
+leftDurationInfo.Text = "Длительность: -"
+leftDurationInfo.LayoutOrder = 3
+leftDurationInfo.Parent = leftInfoFrame
+
+-- Правый фрейм (логгер музыки)
+local rightFrame = Instance.new("Frame")
+rightFrame.Name = "AudioLoggerFrame"
+rightFrame.Size = UDim2.new(0, 300 * scaleFactor, 0, 520 * scaleFactor)
+rightFrame.Position = UDim2.new(1, 10 * scaleFactor, 0.5, -260 * scaleFactor)
+rightFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+rightFrame.BorderColor3 = Color3.fromRGB(20, 20, 20)
+rightFrame.BorderSizePixel = 2
+rightFrame.Parent = mainFrame
+
+local rightCorner = Instance.new("UICorner")
+rightCorner.CornerRadius = UDim.new(0, 10 * scaleFactor)
+rightCorner.Parent = rightFrame
+
+local rightTitle = Instance.new("TextLabel")
+rightTitle.Size = UDim2.new(1, 0, 0, 30 * scaleFactor)
+rightTitle.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+rightTitle.BorderSizePixel = 0
+rightTitle.Text = "Логгер музыки"
+rightTitle.Font = Enum.Font.GothamBold
+rightTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+rightTitle.TextSize = 16 * scaleFactor
+rightTitle.Parent = rightFrame
+
+local rightTitleCorner = Instance.new("UICorner")
+rightTitleCorner.CornerRadius = UDim.new(0, 10 * scaleFactor)
+rightTitleCorner.Parent = rightTitle
+
+local rightScroll = Instance.new("ScrollingFrame")
+rightScroll.Size = UDim2.new(0.9, 0, 0, 470 * scaleFactor)
+rightScroll.Position = UDim2.new(0.05, 0, 0, 40 * scaleFactor)
+rightScroll.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+rightScroll.BorderSizePixel = 0
+rightScroll.ScrollBarThickness = 4 * scaleFactor
+rightScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+rightScroll.Parent = rightFrame
+
+local rightScrollCorner = Instance.new("UICorner")
+rightScrollCorner.CornerRadius = UDim.new(0, 6 * scaleFactor)
+rightScrollCorner.Parent = rightScroll
+
+local rightListLayout = Instance.new("UIListLayout")
+rightListLayout.Padding = UDim.new(0, 5 * scaleFactor)
+rightListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+rightListLayout.Parent = rightScroll
+
+local rightPadding = Instance.new("UIPadding")
+rightPadding.PaddingTop = UDim.new(0, 5 * scaleFactor)
+rightPadding.PaddingLeft = UDim.new(0, 5 * scaleFactor)
+rightPadding.PaddingRight = UDim.new(0, 5 * scaleFactor)
+rightPadding.Parent = rightScroll
+
+-- Функции
+local function setStatus(text, isError)
+    statusLabel.Text = text
+    statusLabel.TextColor3 = isError and Color3.fromRGB(255, 80, 80) or Color3.fromRGB(180, 180, 180)
+end
+
+local function formatTime(seconds)
+    if seconds == 0 or seconds == math.huge then return "0:00" end
+    local minutes = math.floor(seconds / 60)
+    local remainingSeconds = math.floor(seconds % 60)
+    return string.format("%d:%02d", minutes, remainingSeconds)
+end
+
+local function updateSliderVisuals(value)
+    local minSpeed = 0.5
+    local maxSpeed = 2.0
+    local speed = minSpeed + (maxSpeed - minSpeed) * value
+    sliderProgress.Size = UDim2.new(value, 0, 1, 0)
+    sliderHandle.Position = UDim2.new(value, 0, 0.5, 0)
+    sliderLabel.Text = string.format("Скорость: %.2fx", speed)
+    if currentSoundInstance then
+        currentSoundInstance.PlaybackSpeed = speed
+    end
+end
+
+local function updateEQBandVisuals(bandIndex, value)
+    local band = eqBands[bandIndex]
+    if not band then return end
+    band.progress.Size = UDim2.new(1, 0, value, 0)
+    band.handle.Position = UDim2.new(0.5, 0, value, 0)
+    eqSettings.bands[bandIndex] = value
+    local success, encoded = pcall(function()
+        return HttpService:JSONEncode(eqSettings)
+    end)
+    if success then
+        player:SetAttribute("EQSettings", encoded)
+    end
+    if equalizer then
+        equalizer.LowGain = (eqSettings.bands[1] + eqSettings.bands[2]) * 24 - 24
+        equalizer.MidGain = (eqSettings.bands[3] + eqSettings.bands[4] + eqSettings.bands[5] + eqSettings.bands[6]) * 12 - 24
+        equalizer.HighGain = (eqSettings.bands[7] + eqSettings.bands[8] + eqSettings.bands[9] + eqSettings.bands[10]) * 24 - 24
+    end
+end
+
+local function updateReverbEffect()
+    if reverbEffect then
+        reverbEffect.Enabled = isReverbEnabled
+        reverbEffect.DecayTime = reverbSettings.DecayTime
+        reverbEffect.Density = reverbSettings.Density
+        reverbEffect.Diffusion = reverbSettings.Diffusion
+        reverbEffect.DryLevel = reverbSettings.DryLevel
+        reverbEffect.WetLevel = reverbSettings.WetLevel
+    end
+    reverbButton.Text = "Реверберация: " .. (isReverbEnabled and "Вкл" or "Выкл")
+    reverbButton.BackgroundColor3 = isReverbEnabled and Color3.fromRGB(0, 120, 215) or Color3.fromRGB(50, 50, 50)
+    reverbSettingsFrame.Visible = isReverbEnabled
+end
+
+local function updatePlaybackVisuals(value)
+    if currentSoundInstance and currentSoundInstance.TimeLength > 0 then
+        local timePos = value * currentSoundInstance.TimeLength
+        playbackProgress.Size = UDim2.new(value, 0, 1, 0)
+        playbackHandle.Position = UDim2.new(value, 0, 0.5, 0)
+        playbackLabel.Text = formatTime(timePos) .. " / " .. formatTime(currentSoundInstance.TimeLength)
+        if isDraggingPlayback then
+            currentSoundInstance.TimePosition = timePos
+        end
+    else
+        playbackProgress.Size = UDim2.new(0, 0, 1, 0)
+        playbackHandle.Position = UDim2.new(0, 0, 0.5, 0)
+        playbackLabel.Text = "0:00 / 0:00"
+    end
+end
+
+local function cleanupCurrentSound()
+    if currentSoundInstance then
+        currentSoundInstance:Stop()
+        currentSoundInstance:Destroy()
+        currentSoundInstance = nil
+        currentSoundInfo = nil
+        equalizer = nil
+        reverbEffect = nil
+        playStopButton.Text = "Play"
+        playStopButton.BackgroundColor3 = Color3.fromRGB(60, 180, 60)
+    end
+end
+
+local function clearInfo()
+    cleanupCurrentSound()
+    titleInfoLabel.Text = "Название: -"
+    creatorInfoLabel.Text = "Создатель: -"
+    durationInfoLabel.Text = "Длительность: -"
+    leftTitleInfo.Text = "Название: -"
+    leftCreatorInfo.Text = "Создатель: -"
+    leftDurationInfo.Text = "Длительность: -"
+    setStatus("", false)
+    updateSliderVisuals((1.0 - 0.5) / (2.0 - 0.5))
+    updatePlaybackVisuals(0)
+    isLooping = false
+    repeatButton.ImageColor3 = Color3.fromRGB(200, 200, 200)
+    audioLog = {}
+    updateAudioLog()
+end
+
+local function updateAudioLog()
+    for _, child in ipairs(rightScroll:GetChildren()) do
+        if child:IsA("GuiObject") and child ~= rightListLayout and child ~= rightPadding then
+            child:Destroy()
+        end
+    end
+    rightScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+
+    local index = 1
+    for _, log in ipairs(audioLog) do
+        local logFrame = Instance.new("Frame")
+        logFrame.Size = UDim2.new(1, -10 * scaleFactor, 0, 60 * scaleFactor)
+        logFrame.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+        logFrame.BorderSizePixel = 0
+        logFrame.LayoutOrder = index
+        logFrame.Parent = rightScroll
+
+        local logCorner = Instance.new("UICorner")
+        logCorner.CornerRadius = UDim.new(0, 6 * scaleFactor)
+        logCorner.Parent = logFrame
+
+        local logLabel = Instance.new("TextLabel")
+        logLabel.Size = UDim2.new(1, -10 * scaleFactor, 0, 20 * scaleFactor)
+        logLabel.Position = UDim2.new(0, 5 * scaleFactor, 0, 5 * scaleFactor)
+        logLabel.BackgroundTransparency = 1
+        logLabel.Text = string.format("%s: ID %s (%s)", log.PlayerName, log.AssetId, log.Duration)
+        logLabel.Font = Enum.Font.Gotham
+        logLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
+        logLabel.TextSize = 12 * scaleFactor
+        logLabel.TextXAlignment = Enum.TextXAlignment.Left
+        logLabel.TextTruncate = Enum.TextTruncate.AtEnd
+        logLabel.Parent = logFrame
+
+        local buttonFrame = Instance.new("Frame")
+        buttonFrame.Size = UDim2.new(1, -10 * scaleFactor, 0, 30 * scaleFactor)
+        buttonFrame.Position = UDim2.new(0, 5 * scaleFactor, 0, 25 * scaleFactor)
+        buttonFrame.BackgroundTransparency = 1
+        buttonFrame.Parent = logFrame
+
+        local buttonLayout = Instance.new("UIListLayout")
+        buttonLayout.FillDirection = Enum.FillDirection.Horizontal
+        buttonLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
+        buttonLayout.Padding = UDim.new(0, 5 * scaleFactor)
+        buttonLayout.Parent = buttonFrame
+
+        local playBtn = Instance.new("TextButton")
+        playBtn.Size = UDim2.new(0, 50 * scaleFactor, 0, 25 * scaleFactor)
+        playBtn.BackgroundColor3 = Color3.fromRGB(60, 180, 60)
+        playBtn.BorderColor3 = Color3.fromRGB(40, 150, 40)
+        playBtn.Text = "Play"
+        playBtn.Font = Enum.Font.GothamBold
+        playBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        playBtn.TextSize = 12 * scaleFactor
+        playBtn.Parent = buttonFrame
+        local playBtnCorner = Instance.new("UICorner")
+        playBtnCorner.CornerRadius = UDim.new(0, 4 * scaleFactor)
+        playBtnCorner.Parent = playBtn
+
+        local playBBBtn = Instance.new("TextButton")
+        playBBBtn.Size = UDim2.new(0, 50 * scaleFactor, 0, 25 * scaleFactor)
+        playBBBtn.BackgroundColor3 = Color3.fromRGB(0, 120, 215)
+        playBBBtn.BorderColor3 = Color3.fromRGB(0, 100, 190)
+        playBBBtn.Text = "Play BB"
+        playBBBtn.Font = Enum.Font.GothamBold
+        playBBBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        playBBBtn.TextSize = 12 * scaleFactor
+        playBBBtn.Parent = buttonFrame
+        local playBBBtnCorner = Instance.new("UICorner")
+        playBBBtnCorner.CornerRadius = UDim.new(0, 4 * scaleFactor)
+        playBBBtnCorner.Parent = playBBBtn
+
+        local stopBtn = Instance.new("TextButton")
+        stopBtn.Size = UDim2.new(0, 50 * scaleFactor, 0, 25 * scaleFactor)
+        stopBtn.BackgroundColor3 = Color3.fromRGB(180, 60, 60)
+        stopBtn.BorderColor3 = Color3.fromRGB(150, 40, 40)
+        stopBtn.Text = "Stop"
+        stopBtn.Font = Enum.Font.GothamBold
+        stopBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        stopBtn.TextSize = 12 * scaleFactor
+        stopBtn.Parent = buttonFrame
+        local stopBtnCorner = Instance.new("UICorner")
+        stopBtnCorner.CornerRadius = UDim.new(0, 4 * scaleFactor)
+        stopBtnCorner.Parent = stopBtn
+
+        local copyBtn = Instance.new("TextButton")
+        copyBtn.Size = UDim2.new(0, 50 * scaleFactor, 0, 25 * scaleFactor)
+        copyBtn.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
+        copyBtn.BorderColor3 = Color3.fromRGB(80, 80, 80)
+        copyBtn.Text = "Copy"
+        copyBtn.Font = Enum.Font.GothamBold
+        copyBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        copyBtn.TextSize = 12 * scaleFactor
+        copyBtn.Parent = buttonFrame
+        local copyBtnCorner = Instance.new("UICorner")
+        copyBtnCorner.CornerRadius = UDim.new(0, 4 * scaleFactor)
+        copyBtnCorner.Parent = copyBtn
+
+        local sayBtn = Instance.new("TextButton")
+        sayBtn.Size = UDim2.new(0, 50 * scaleFactor, 0, 25 * scaleFactor)
+        sayBtn.BackgroundColor3 = Color3.fromRGB(0, 120, 215)
+        sayBtn.BorderColor3 = Color3.fromRGB(0, 100, 190)
+        sayBtn.Text = "Say"
+        sayBtn.Font = Enum.Font.GothamBold
+        sayBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        sayBtn.TextSize = 12 * scaleFactor
+        sayBtn.Parent = buttonFrame
+        local sayBtnCorner = Instance.new("UICorner")
+        sayBtnCorner.CornerRadius = UDim.new(0, 4 * scaleFactor)
+        sayBtnCorner.Parent = sayBtn
+
+        playBtn.MouseButton1Click:Connect(function()
+            fetchAndPlaySound(log.AssetId)
+        end)
+
+        playBBBtn.MouseButton1Click:Connect(function()
+            local character = player.Character
+            if character then
+                local tool = character:FindFirstChildWhichIsA("Tool")
+                if tool and tool.Name == "Boombox" then
+                    local sound = tool:FindFirstChildWhichIsA("Sound") or Instance.new("Sound", tool)
+                    sound.SoundId = "rbxassetid://" .. log.AssetId
+                    sound:Play()
+                    setStatus("Воспроизведение на бумбоксе.", false)
+                else
+                    setStatus("Ошибка: Бумбокс не найден в руках.", true)
+                end
+            else
+                setStatus("Ошибка: Персонаж не найден.", true)
+            end
+        end)
+
+        stopBtn.MouseButton1Click:Connect(function()
+            cleanupCurrentSound()
+        end)
+
+        copyBtn.MouseButton1Click:Connect(function()
+            if setclipboard then
+                setclipboard(tostring(log.AssetId))
+                setStatus("ID скопирован в буфер обмена.", false)
+            else
+                setStatus("Ошибка: Копирование не поддерживается.", true)
+            end
+        end)
+
+        sayBtn.MouseButton1Click:Connect(function()
+            local message = string.format("/e %s plays roblox.com/library/%s", log.PlayerName, log.AssetId)
+            local success, err = pcall(function()
+                if player.Character and player.Character:FindFirstChild("Head") then
+                    Chat:Chat(player.Character.Head, message, Enum.ChatColor.White)
+                else
+                    error("Персонаж или голова не найдены")
+                end
+            end)
+            if not success then
+                if setclipboard then
+                    setclipboard(message)
+                    setStatus("Чат недоступен, сообщение скопировано.", false)
+                else
+                    setStatus("Ошибка: Чат и копирование недоступны.", true)
+                end
+            end
+        end)
+
+        index = index + 1
+    end
+    rightScroll.CanvasSize = UDim2.new(0, 0, 0, index * 65 * scaleFactor)
+end
+
+local function logAudio(soundInstance)
+    if not isLoggingEnabled then return end
+    if not soundInstance:IsA("Sound") or not soundInstance.SoundId:match("^rbxassetid://(%d+)$") then
+        return
+    end
+    local assetId = tonumber(soundInstance.SoundId:match("%d+"))
+    if not assetId then return end
+
+    if soundInstance.TimeLength < 5 then return end
+
+    for _, log in ipairs(audioLog) do
+        if log.AssetId == assetId then
+            return
+        end
+    end
+
+    local creatorName = "Unknown"
+    local creatorId = "0"
+    local duration = formatTime(soundInstance.TimeLength)
+
+    local success, result = pcall(function()
+        return MarketplaceService:GetProductInfo(assetId, Enum.InfoType.Asset)
+    end)
+    if success and result and result.AssetTypeId == Enum.AssetType.Audio.Value then
+        creatorId = tostring(result.Creator.CreatorTargetId)
+        creatorName = result.Creator.Name or creatorName
+    else
+        return
+    end
+
+    local playerName = "Unknown"
+    local parent = soundInstance
+    while parent and parent ~= workspace and not parent:IsA("Model") do
+        parent = parent.Parent
+    end
+    if parent and parent:IsA("Model") then
+        local owner = Players:GetPlayerFromCharacter(parent)
+        if owner then
+            playerName = owner.Name
+        end
+    end
+
+    table.insert(audioLog, {
+        AssetId = assetId,
+        PlayerName = playerName,
+        Duration = duration
+    })
+    updateAudioLog()
+end
+
+local function fetchAndPlaySound(assetId)
+    cleanupCurrentSound()
+    setStatus("Загрузка информации...", false)
+
+    local success, result = pcall(function()
+        return MarketplaceService:GetProductInfo(assetId, Enum.InfoType.Asset)
+    end)
+
+    if not success or not result then
+        setStatus("Ошибка: Не удалось получить информацию.", true)
+        return
+    end
+
+    if result.AssetTypeId ~= Enum.AssetType.Audio.Value then
+        setStatus("Ошибка: ID не является звуком.", true)
+        return
+    end
+
+    currentSoundInfo = result
+
+    titleInfoLabel.Text = "Название: " .. (result.Name or "Неизвестно")
+    leftTitleInfo.Text = "Название: " .. (result.Name or "Неизвестно")
+
+    local creatorName = "Неизвестно"
+    local creatorId = tostring(result.Creator.CreatorTargetId)
+    if creatorInfoCache[creatorId] then
+        creatorName = creatorInfoCache[creatorId]
+    elseif result.Creator.Name then
+        creatorName = result.Creator.Name
+        creatorInfoCache[creatorId] = creatorName
+    end
+    creatorInfoLabel.Text = "Создатель: " .. creatorName .. " (ID: " .. creatorId .. ")"
+    leftCreatorInfo.Text = "Создатель: " .. creatorName .. " (ID: " .. creatorId .. ")"
+
+    if not creatorMusicList[creatorId] then
+        creatorMusicList[creatorId] = {}
+    end
+    local exists = false
+    for _, track in ipairs(creatorMusicList[creatorId]) do
+        if track.AssetId == assetId then
+            exists = true
+            break
+        end
+    end
+    if not exists then
+        table.insert(creatorMusicList[creatorId], {AssetId = assetId, Name = result.Name})
+    end
+
+    setStatus("Загрузка звука...", false)
+
+    local sound = Instance.new("Sound")
+    sound.Name = "UISound_" .. assetId
+    sound.SoundId = "rbxassetid://" .. assetId
+    sound.Volume = 0.7
+    local sliderValue = sliderHandle.Position.X.Scale
+    local minSpeed = 0.5
+    local maxSpeed = 2.0
+    sound.PlaybackSpeed = minSpeed + (maxSpeed - minSpeed) * sliderValue
+    sound.Parent = SoundService
+
+    equalizer = Instance.new("EqualizerSoundEffect")
+    equalizer.LowGain = (eqSettings.bands[1] + eqSettings.bands[2]) * 24 - 24
+    equalizer.MidGain = (eqSettings.bands[3] + eqSettings.bands[4] + eqSettings.bands[5] + eqSettings.bands[6]) * 12 - 24
+    equalizer.HighGain = (eqSettings.bands[7] + eqSettings.bands[8] + eqSettings.bands[9] + eqSettings.bands[10]) * 24 - 24
+    equalizer.Parent = sound
+
+    reverbEffect = Instance.new("ReverbSoundEffect")
+    reverbEffect.DecayTime = reverbSettings.DecayTime
+    reverbEffect.Density = reverbSettings.Density
+    reverbEffect.Diffusion = reverbSettings.Diffusion
+    reverbEffect.DryLevel = reverbSettings.DryLevel
+    reverbEffect.WetLevel = reverbSettings.WetLevel
+    reverbEffect.Enabled = isReverbEnabled
+    reverbEffect.Parent = sound
+
+    currentSoundInstance = sound
+
+    local loaded = sound.IsLoaded
+    if not loaded then
+        local conn
+        conn = sound.Loaded:Connect(function()
+            loaded = true
+            if conn then conn:Disconnect() end
+        end)
+        local timeout = 5
+        local elapsed = 0
+        while not loaded and elapsed < timeout do
+            elapsed += task.wait(0.1)
+        end
+        if conn and not loaded then conn:Disconnect() end
+    end
+
+    if loaded then
+        durationInfoLabel.Text = "Длительность: " .. formatTime(sound.TimeLength)
+        leftDurationInfo.Text = "Длительность: " .. formatTime(sound.TimeLength)
+        setStatus("Готово.", false)
+        sound:Play()
+        playStopButton.Text = "Stop"
+        playStopButton.BackgroundColor3 = Color3.fromRGB(180, 60, 60)
+        updatePlaybackVisuals(0)
+    else
+        durationInfoLabel.Text = "Длительность: Ошибка"
+        leftDurationInfo.Text = "Длительность: Ошибка"
+        setStatus("Ошибка: Не удалось загрузить звук.", true)
+        cleanupCurrentSound()
+    end
+
+    sound.Ended:Connect(function()
+        if isLooping then
+            sound:Play()
+        else
+            playStopButton.Text = "Play"
+            playStopButton.BackgroundColor3 = Color3.fromRGB(60, 180, 60)
+            updatePlaybackVisuals(0)
+        end
+    end)
+end
+
+-- Обновление прогресса воспроизведения
+game:GetService("RunService").Heartbeat:Connect(function()
+    if currentSoundInstance and currentSoundInstance.IsPlaying and not isDraggingPlayback then
+        local progress = currentSoundInstance.TimePosition / math.max(currentSoundInstance.TimeLength, 1)
+        updatePlaybackVisuals(progress)
+    end
+end)
+
+-- Мониторинг звуков Boombox
+local function monitorSounds()
+    local function checkDescendant(instance)
+        if instance:IsA("Sound") and instance.SoundId:match("^rbxassetid://%d+$") then
+            logAudio(instance)
+        end
+    end
+
+    workspace.DescendantAdded:Connect(checkDescendant)
+    for _, instance in ipairs(workspace:GetDescendants()) do
+        checkDescendant(instance)
+    end
+end
+task.spawn(monitorSounds)
+
+-- Минимизация/развертывание
+minimizeButton.MouseButton1Click:Connect(function()
+    isMinimized = not isMinimized
+    minimizeButton.Text = isMinimized and "+" or "−"
+    mainFrame.Size = isMinimized and UDim2.new(0, 450 * scaleFactor, 0, 40 * scaleFactor) or UDim2.new(0, 450 * scaleFactor, 0, 520 * scaleFactor)
+    for _, child in ipairs(mainFrame:GetChildren()) do
+        if child:IsA("GuiObject") and child ~= titleLabel and child ~= minimizeButton and child ~= closeButton then
+            child.Visible = not isMinimized
+        end
+    end
+end)
+
+-- Закрытие
+closeButton.MouseButton1Click:Connect(function()
+    screenGui.Enabled = false
+    cleanupCurrentSound()
+end)
+
+-- Обработчики UI
+findButton.MouseButton1Click:Connect(function()
+    local id = tonumber(idInputBox.Text)
+    if id and id > 0 and math.floor(id) == id then
+        fetchAndPlaySound(id)
+    else
+        setStatus("Ошибка: Введите корректный ID.", true)
+    end
+end)
+
+idInputBox.FocusLost:Connect(function(enterPressed)
+    if enterPressed then
+        local id = tonumber(idInputBox.Text)
+        if id and id > 0 and math.floor(id) == id then
+            fetchAndPlaySound(id)
+        else
+            setStatus("Ошибка: Введите корректный ID.", true)
+        end
+    end
+end)
+
+clearButton.MouseButton1Click:Connect(clearInfo)
+
+playStopButton.MouseButton1Click:Connect(function()
+    if currentSoundInstance and currentSoundInstance.IsLoaded then
+        if currentSoundInstance.IsPlaying then
+            currentSoundInstance:Stop()
+            playStopButton.Text = "Play"
+            playStopButton.BackgroundColor3 = Color3.fromRGB(60, 180, 60)
+        else
+            currentSoundInstance:Play()
+            playStopButton.Text = "Stop"
+            playStopButton.BackgroundColor3 = Color3.fromRGB(180, 60, 60)
+        end
+    elseif currentSoundInfo then
+        fetchAndPlaySound(currentSoundInfo.AssetId)
+    else
+        setStatus("Сначала найдите звук.", false)
+    end
+end)
+
+repeatButton.MouseButton1Click:Connect(function()
+    isLooping = not isLooping
+    repeatButton.ImageColor3 = isLooping and Color3.fromRGB(0, 120, 215) or Color3.fromRGB(200, 200, 200)
+end)
+
+reverbButton.MouseButton1Click:Connect(function()
+    isReverbEnabled = not isReverbEnabled
+    updateReverbEffect()
+end)
+
+loggerButton.MouseButton1Click:Connect(function()
+    isLoggingEnabled = not isLoggingEnabled
+    loggerButton.Text = "Логгер: " .. (isLoggingEnabled and "Вкл" or "Выкл")
+    loggerButton.BackgroundColor3 = isLoggingEnabled and Color3.fromRGB(0, 120, 215) or Color3.fromRGB(50, 50, 50)
+end)
+
+local function updateSliderFromInput(input, track, handle, progress, callback, isVertical)
+    local trackAbsolutePosition = track.AbsolutePosition
+    local trackAbsoluteSize = track.AbsoluteSize
+    local relative
+    if isVertical then
+        relative = math.clamp((input.Position.Y - trackAbsolutePosition.Y) / trackAbsoluteSize.Y, 0, 1)
+    else
+        relative = math.clamp((input.Position.X - trackAbsolutePosition.X) / trackAbsoluteSize.X, 0, 1)
+    end
+    progress.Size = isVertical and UDim2.new(1, 0, relative, 0) or UDim2.new(relative, 0, 1, 0)
+    handle.Position = isVertical and UDim2.new(0.5, 0, relative, 0) or UDim2.new(relative, 0, 0.5, 0)
+    callback(relative)
+end
+
+-- Слайдер скорости
+sliderHandle.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        isDraggingSlider = true
+        updateSliderFromInput(input, sliderTrack, sliderHandle, sliderProgress, updateSliderVisuals, false)
+    end
+end)
+
+sliderTrack.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        isDraggingSlider = true
+        updateSliderFromInput(input, sliderTrack, sliderHandle, sliderProgress, updateSliderVisuals, false)
+    end
+end)
+
+-- Слайдер воспроизведения
+playbackHandle.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        isDraggingPlayback = true
+        updateSliderFromInput(input, playbackTrack, playbackHandle, playbackProgress, updatePlaybackVisuals, false)
+    end
+end)
+
+playbackTrack.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        isDraggingPlayback = true
+        updateSliderFromInput(input, playbackTrack, playbackHandle, playbackProgress, updatePlaybackVisuals, false)
+    end
+end)
+
+-- Эквалайзер
+local function handleEQInput(input, bandIndex, track, handle, progress)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        isDraggingEQ = bandIndex
+        updateSliderFromInput(input, track, handle, progress, function(value)
+            updateEQBandVisuals(bandIndex, value)
+        end, true)
+    end
+end
+
+for i = 1, 10 do
+    local band = eqBands[i]
+    band.handle.InputBegan:Connect(function(input)
+        handleEQInput(input, i, band.track, band.handle, band.progress)
+    end)
+    band.track.InputBegan:Connect(function(input)
+        handleEQInput(input, i, band.track, band.handle, band.progress)
+    end)
+end
+
+UserInputService.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        if isDraggingSlider then
+            updateSliderFromInput(input, sliderTrack, sliderHandle, sliderProgress, updateSliderVisuals, false)
+        elseif isDraggingPlayback then
+            updateSliderFromInput(input, playbackTrack, playbackHandle, playbackProgress, updatePlaybackVisuals, false)
+        elseif type(isDraggingEQ) == "number" and eqBands[isDraggingEQ] then
+            local band = eqBands[isDraggingEQ]
+            updateSliderFromInput(input, band.track, band.handle, band.progress, function(value)
+                updateEQBandVisuals(isDraggingEQ, value)
+            end, true)
+        end
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        isDraggingSlider = false
+        isDraggingPlayback = false
+        isDraggingEQ = nil
+    end
+end)
+
+-- Инициализация эквалайзера
+for i = 1, 10 do
+    updateEQBandVisuals(i, eqSettings.bands[i])
+end
+
+-- Инициализация логгера
+updateAudioLog()
+
+print("Team Nova: AudioMasterUI Initialized")
