@@ -2,7 +2,7 @@
     AudioMasterUI by Team Nova
     Местоположение: StarterGui (LocalScript)
     Описание: Профессиональный музыкальный плеер с поиском по ID, полным эквалайзером,
-              перемоткой, повтором трека, списком треков авторов, реверберацией и логгером музыки.
+              перемоткой, повтором трека, списком треков авторов, реверберацией. (Логгер удален)
     Ограничения: Поиск по ключевым словам невозможен из-за Roblox API.
 ]]
 
@@ -35,11 +35,11 @@ local creatorMusicList = {  -- Симулируем список треков д
         {AssetId = 1835355540, Name = "Sample Track 2"}
     }
 }
-local audioLog = {} -- Лог музыки: {AssetId, PlayerName, Duration}
+-- local audioLog = {} -- [[ УДАЛЕНО ]]
 local equalizer = nil -- Эквалайзер
 local reverbEffect = nil -- Реверберация
 local isReverbEnabled = false -- Состояние реверберации
-local isLoggingEnabled = false -- Состояние логгера
+-- local isLoggingEnabled = false -- [[ УДАЛЕНО ]]
 local isMobile = UserInputService.TouchEnabled -- Определяем платформу
 local scaleFactor = isMobile and 0.7 or 1 -- 70% для мобильных
 local eqSettings = { -- Хранилище настроек эквалайзера
@@ -591,34 +591,24 @@ local playStopBtnCorner = Instance.new("UICorner")
 playStopBtnCorner.CornerRadius = UDim.new(0, 6 * scaleFactor)
 playStopBtnCorner.Parent = playStopButton
 
-local repeatButton = Instance.new("ImageButton")
+-- [[ НАЧАЛО ИЗМЕНЕННОГО БЛОКА (RepeatButton - TextButton) ]]
+local repeatButton = Instance.new("TextButton") -- Изменено с ImageButton на TextButton
 repeatButton.Name = "RepeatButton"
-repeatButton.Size = UDim2.new(0.2, -5 * scaleFactor, 0, 40 * scaleFactor)
-repeatButton.Position = UDim2.new(0.5, 0, 0, 0)
-repeatButton.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-repeatButton.Image = "rbxassetid://6026668889" -- Иконка повтора
-repeatButton.ImageColor3 = Color3.fromRGB(200, 200, 200)
+repeatButton.Size = UDim2.new(0.2, -5 * scaleFactor, 0, 40 * scaleFactor) -- Размер такой же, как у других кнопок управления
+repeatButton.Position = UDim2.new(0.5, 0, 0, 0) -- Позиция после Play/Stop
+repeatButton.BackgroundColor3 = Color3.fromRGB(50, 50, 50) -- Цвет фона по умолчанию
+repeatButton.Text = "Повтор" -- Текст кнопки
+repeatButton.Font = Enum.Font.GothamBold -- Шрифт (как у других кнопок)
+repeatButton.TextColor3 = Color3.fromRGB(255, 255, 255) -- Цвет текста
+repeatButton.TextSize = 14 * scaleFactor -- Размер текста (как у других кнопок)
 repeatButton.Parent = controlFrame
 
 local repeatBtnCorner = Instance.new("UICorner")
 repeatBtnCorner.CornerRadius = UDim.new(0, 6 * scaleFactor)
 repeatBtnCorner.Parent = repeatButton
+-- [[ КОНЕЦ ИЗМЕНЕННОГО БЛОКА ]]
 
-local loggerButton = Instance.new("TextButton")
-loggerButton.Name = "LoggerButton"
-loggerButton.Size = UDim2.new(0.25, -5 * scaleFactor, 0, 40 * scaleFactor)
-loggerButton.Position = UDim2.new(0.75, 0, 0, 0)
-loggerButton.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-loggerButton.BorderColor3 = Color3.fromRGB(70, 70, 70)
-loggerButton.Text = "Логгер: Выкл"
-loggerButton.Font = Enum.Font.GothamBold
-loggerButton.TextColor3 = Color3.fromRGB(200, 200, 200)
-loggerButton.TextSize = 14 * scaleFactor
-loggerButton.Parent = controlFrame
-
-local loggerBtnCorner = Instance.new("UICorner")
-loggerBtnCorner.CornerRadius = UDim.new(0, 6 * scaleFactor)
-loggerBtnCorner.Parent = loggerButton
+-- [[ БЛОК loggerButton УДАЛЕН ]] --
 
 -- Левый фрейм (информация о текущем треке)
 local leftFrame = Instance.new("Frame")
@@ -703,57 +693,7 @@ leftDurationInfo.Text = "Длительность: -"
 leftDurationInfo.LayoutOrder = 3
 leftDurationInfo.Parent = leftInfoFrame
 
--- Правый фрейм (логгер музыки)
-local rightFrame = Instance.new("Frame")
-rightFrame.Name = "AudioLoggerFrame"
-rightFrame.Size = UDim2.new(0, 300 * scaleFactor, 0, 520 * scaleFactor)
-rightFrame.Position = UDim2.new(1, 10 * scaleFactor, 0.5, -260 * scaleFactor)
-rightFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-rightFrame.BorderColor3 = Color3.fromRGB(20, 20, 20)
-rightFrame.BorderSizePixel = 2
-rightFrame.Parent = mainFrame
-
-local rightCorner = Instance.new("UICorner")
-rightCorner.CornerRadius = UDim.new(0, 10 * scaleFactor)
-rightCorner.Parent = rightFrame
-
-local rightTitle = Instance.new("TextLabel")
-rightTitle.Size = UDim2.new(1, 0, 0, 30 * scaleFactor)
-rightTitle.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-rightTitle.BorderSizePixel = 0
-rightTitle.Text = "Логгер музыки"
-rightTitle.Font = Enum.Font.GothamBold
-rightTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
-rightTitle.TextSize = 16 * scaleFactor
-rightTitle.Parent = rightFrame
-
-local rightTitleCorner = Instance.new("UICorner")
-rightTitleCorner.CornerRadius = UDim.new(0, 10 * scaleFactor)
-rightTitleCorner.Parent = rightTitle
-
-local rightScroll = Instance.new("ScrollingFrame")
-rightScroll.Size = UDim2.new(0.9, 0, 0, 470 * scaleFactor)
-rightScroll.Position = UDim2.new(0.05, 0, 0, 40 * scaleFactor)
-rightScroll.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-rightScroll.BorderSizePixel = 0
-rightScroll.ScrollBarThickness = 4 * scaleFactor
-rightScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
-rightScroll.Parent = rightFrame
-
-local rightScrollCorner = Instance.new("UICorner")
-rightScrollCorner.CornerRadius = UDim.new(0, 6 * scaleFactor)
-rightScrollCorner.Parent = rightScroll
-
-local rightListLayout = Instance.new("UIListLayout")
-rightListLayout.Padding = UDim.new(0, 5 * scaleFactor)
-rightListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-rightListLayout.Parent = rightScroll
-
-local rightPadding = Instance.new("UIPadding")
-rightPadding.PaddingTop = UDim.new(0, 5 * scaleFactor)
-rightPadding.PaddingLeft = UDim.new(0, 5 * scaleFactor)
-rightPadding.PaddingRight = UDim.new(0, 5 * scaleFactor)
-rightPadding.Parent = rightScroll
+-- [[ БЛОК Правый фрейм (логгер музыки) УДАЛЕН ]] --
 
 -- Функции
 local function setStatus(text, isError)
@@ -762,7 +702,7 @@ local function setStatus(text, isError)
 end
 
 local function formatTime(seconds)
-    if seconds == 0 or seconds == math.huge then return "0:00" end
+    if seconds == 0 or seconds == math.huge or seconds == nil then return "0:00" end -- Добавлена проверка на nil
     local minutes = math.floor(seconds / 60)
     local remainingSeconds = math.floor(seconds % 60)
     return string.format("%d:%02d", minutes, remainingSeconds)
@@ -780,6 +720,7 @@ local function updateSliderVisuals(value)
     end
 end
 
+-- [[ НАЧАЛО ИСПРАВЛЕННОЙ ВЕРСИИ updateEQBandVisuals ]]
 local function updateEQBandVisuals(bandIndex, value)
     local band = eqBands[bandIndex]
     if not band then return end
@@ -792,12 +733,14 @@ local function updateEQBandVisuals(bandIndex, value)
     if success then
         player:SetAttribute("EQSettings", encoded)
     end
+    -- Проверяем, существует ли equalizer
     if equalizer then
         equalizer.LowGain = (eqSettings.bands[1] + eqSettings.bands[2]) * 24 - 24
         equalizer.MidGain = (eqSettings.bands[3] + eqSettings.bands[4] + eqSettings.bands[5] + eqSettings.bands[6]) * 12 - 24
         equalizer.HighGain = (eqSettings.bands[7] + eqSettings.bands[8] + eqSettings.bands[9] + eqSettings.bands[10]) * 24 - 24
     end
 end
+-- [[ КОНЕЦ ИСПРАВЛЕННОЙ ВЕРСИИ updateEQBandVisuals ]]
 
 local function updateReverbEffect()
     if reverbEffect then
@@ -854,228 +797,15 @@ local function clearInfo()
     updateSliderVisuals((1.0 - 0.5) / (2.0 - 0.5))
     updatePlaybackVisuals(0)
     isLooping = false
-    repeatButton.ImageColor3 = Color3.fromRGB(200, 200, 200)
-    audioLog = {}
-    updateAudioLog()
+    -- Исправлено: Используем BackgroundColor3 и цвет по умолчанию для TextButton
+    repeatButton.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+    -- audioLog = {} -- [[ УДАЛЕНО ]]
+    -- updateAudioLog() -- [[ УДАЛЕНО ]]
 end
 
-local function updateAudioLog()
-    for _, child in ipairs(rightScroll:GetChildren()) do
-        if child:IsA("GuiObject") and child ~= rightListLayout and child ~= rightPadding then
-            child:Destroy()
-        end
-    end
-    rightScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+-- [[ ФУНКЦИЯ updateAudioLog УДАЛЕНА ]] --
 
-    local index = 1
-    for _, log in ipairs(audioLog) do
-        local logFrame = Instance.new("Frame")
-        logFrame.Size = UDim2.new(1, -10 * scaleFactor, 0, 60 * scaleFactor)
-        logFrame.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-        logFrame.BorderSizePixel = 0
-        logFrame.LayoutOrder = index
-        logFrame.Parent = rightScroll
-
-        local logCorner = Instance.new("UICorner")
-        logCorner.CornerRadius = UDim.new(0, 6 * scaleFactor)
-        logCorner.Parent = logFrame
-
-        local logLabel = Instance.new("TextLabel")
-        logLabel.Size = UDim2.new(1, -10 * scaleFactor, 0, 20 * scaleFactor)
-        logLabel.Position = UDim2.new(0, 5 * scaleFactor, 0, 5 * scaleFactor)
-        logLabel.BackgroundTransparency = 1
-        logLabel.Text = string.format("%s: ID %s (%s)", log.PlayerName, log.AssetId, log.Duration)
-        logLabel.Font = Enum.Font.Gotham
-        logLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
-        logLabel.TextSize = 12 * scaleFactor
-        logLabel.TextXAlignment = Enum.TextXAlignment.Left
-        logLabel.TextTruncate = Enum.TextTruncate.AtEnd
-        logLabel.Parent = logFrame
-
-        local buttonFrame = Instance.new("Frame")
-        buttonFrame.Size = UDim2.new(1, -10 * scaleFactor, 0, 30 * scaleFactor)
-        buttonFrame.Position = UDim2.new(0, 5 * scaleFactor, 0, 25 * scaleFactor)
-        buttonFrame.BackgroundTransparency = 1
-        buttonFrame.Parent = logFrame
-
-        local buttonLayout = Instance.new("UIListLayout")
-        buttonLayout.FillDirection = Enum.FillDirection.Horizontal
-        buttonLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
-        buttonLayout.Padding = UDim.new(0, 5 * scaleFactor)
-        buttonLayout.Parent = buttonFrame
-
-        local playBtn = Instance.new("TextButton")
-        playBtn.Size = UDim2.new(0, 50 * scaleFactor, 0, 25 * scaleFactor)
-        playBtn.BackgroundColor3 = Color3.fromRGB(60, 180, 60)
-        playBtn.BorderColor3 = Color3.fromRGB(40, 150, 40)
-        playBtn.Text = "Play"
-        playBtn.Font = Enum.Font.GothamBold
-        playBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-        playBtn.TextSize = 12 * scaleFactor
-        playBtn.Parent = buttonFrame
-        local playBtnCorner = Instance.new("UICorner")
-        playBtnCorner.CornerRadius = UDim.new(0, 4 * scaleFactor)
-        playBtnCorner.Parent = playBtn
-
-        local playBBBtn = Instance.new("TextButton")
-        playBBBtn.Size = UDim2.new(0, 50 * scaleFactor, 0, 25 * scaleFactor)
-        playBBBtn.BackgroundColor3 = Color3.fromRGB(0, 120, 215)
-        playBBBtn.BorderColor3 = Color3.fromRGB(0, 100, 190)
-        playBBBtn.Text = "Play BB"
-        playBBBtn.Font = Enum.Font.GothamBold
-        playBBBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-        playBBBtn.TextSize = 12 * scaleFactor
-        playBBBtn.Parent = buttonFrame
-        local playBBBtnCorner = Instance.new("UICorner")
-        playBBBtnCorner.CornerRadius = UDim.new(0, 4 * scaleFactor)
-        playBBBtnCorner.Parent = playBBBtn
-
-        local stopBtn = Instance.new("TextButton")
-        stopBtn.Size = UDim2.new(0, 50 * scaleFactor, 0, 25 * scaleFactor)
-        stopBtn.BackgroundColor3 = Color3.fromRGB(180, 60, 60)
-        stopBtn.BorderColor3 = Color3.fromRGB(150, 40, 40)
-        stopBtn.Text = "Stop"
-        stopBtn.Font = Enum.Font.GothamBold
-        stopBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-        stopBtn.TextSize = 12 * scaleFactor
-        stopBtn.Parent = buttonFrame
-        local stopBtnCorner = Instance.new("UICorner")
-        stopBtnCorner.CornerRadius = UDim.new(0, 4 * scaleFactor)
-        stopBtnCorner.Parent = stopBtn
-
-        local copyBtn = Instance.new("TextButton")
-        copyBtn.Size = UDim2.new(0, 50 * scaleFactor, 0, 25 * scaleFactor)
-        copyBtn.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
-        copyBtn.BorderColor3 = Color3.fromRGB(80, 80, 80)
-        copyBtn.Text = "Copy"
-        copyBtn.Font = Enum.Font.GothamBold
-        copyBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-        copyBtn.TextSize = 12 * scaleFactor
-        copyBtn.Parent = buttonFrame
-        local copyBtnCorner = Instance.new("UICorner")
-        copyBtnCorner.CornerRadius = UDim.new(0, 4 * scaleFactor)
-        copyBtnCorner.Parent = copyBtn
-
-        local sayBtn = Instance.new("TextButton")
-        sayBtn.Size = UDim2.new(0, 50 * scaleFactor, 0, 25 * scaleFactor)
-        sayBtn.BackgroundColor3 = Color3.fromRGB(0, 120, 215)
-        sayBtn.BorderColor3 = Color3.fromRGB(0, 100, 190)
-        sayBtn.Text = "Say"
-        sayBtn.Font = Enum.Font.GothamBold
-        sayBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-        sayBtn.TextSize = 12 * scaleFactor
-        sayBtn.Parent = buttonFrame
-        local sayBtnCorner = Instance.new("UICorner")
-        sayBtnCorner.CornerRadius = UDim.new(0, 4 * scaleFactor)
-        sayBtnCorner.Parent = sayBtn
-
-        playBtn.MouseButton1Click:Connect(function()
-            fetchAndPlaySound(log.AssetId)
-        end)
-
-        playBBBtn.MouseButton1Click:Connect(function()
-            local character = player.Character
-            if character then
-                local tool = character:FindFirstChildWhichIsA("Tool")
-                if tool and tool.Name == "Boombox" then
-                    local sound = tool:FindFirstChildWhichIsA("Sound") or Instance.new("Sound", tool)
-                    sound.SoundId = "rbxassetid://" .. log.AssetId
-                    sound:Play()
-                    setStatus("Воспроизведение на бумбоксе.", false)
-                else
-                    setStatus("Ошибка: Бумбокс не найден в руках.", true)
-                end
-            else
-                setStatus("Ошибка: Персонаж не найден.", true)
-            end
-        end)
-
-        stopBtn.MouseButton1Click:Connect(function()
-            cleanupCurrentSound()
-        end)
-
-        copyBtn.MouseButton1Click:Connect(function()
-            if setclipboard then
-                setclipboard(tostring(log.AssetId))
-                setStatus("ID скопирован в буфер обмена.", false)
-            else
-                setStatus("Ошибка: Копирование не поддерживается.", true)
-            end
-        end)
-
-        sayBtn.MouseButton1Click:Connect(function()
-            local message = string.format("/e %s plays roblox.com/library/%s", log.PlayerName, log.AssetId)
-            local success, err = pcall(function()
-                if player.Character and player.Character:FindFirstChild("Head") then
-                    Chat:Chat(player.Character.Head, message, Enum.ChatColor.White)
-                else
-                    error("Персонаж или голова не найдены")
-                end
-            end)
-            if not success then
-                if setclipboard then
-                    setclipboard(message)
-                    setStatus("Чат недоступен, сообщение скопировано.", false)
-                else
-                    setStatus("Ошибка: Чат и копирование недоступны.", true)
-                end
-            end
-        end)
-
-        index = index + 1
-    end
-    rightScroll.CanvasSize = UDim2.new(0, 0, 0, index * 65 * scaleFactor)
-end
-
-local function logAudio(soundInstance)
-    if not isLoggingEnabled then return end
-    if not soundInstance:IsA("Sound") or not soundInstance.SoundId:match("^rbxassetid://(%d+)$") then
-        return
-    end
-    local assetId = tonumber(soundInstance.SoundId:match("%d+"))
-    if not assetId then return end
-
-    if soundInstance.TimeLength < 5 then return end
-
-    for _, log in ipairs(audioLog) do
-        if log.AssetId == assetId then
-            return
-        end
-    end
-
-    local creatorName = "Unknown"
-    local creatorId = "0"
-    local duration = formatTime(soundInstance.TimeLength)
-
-    local success, result = pcall(function()
-        return MarketplaceService:GetProductInfo(assetId, Enum.InfoType.Asset)
-    end)
-    if success and result and result.AssetTypeId == Enum.AssetType.Audio.Value then
-        creatorId = tostring(result.Creator.CreatorTargetId)
-        creatorName = result.Creator.Name or creatorName
-    else
-        return
-    end
-
-    local playerName = "Unknown"
-    local parent = soundInstance
-    while parent and parent ~= workspace and not parent:IsA("Model") do
-        parent = parent.Parent
-    end
-    if parent and parent:IsA("Model") then
-        local owner = Players:GetPlayerFromCharacter(parent)
-        if owner then
-            playerName = owner.Name
-        end
-    end
-
-    table.insert(audioLog, {
-        AssetId = assetId,
-        PlayerName = playerName,
-        Duration = duration
-    })
-    updateAudioLog()
-end
+-- [[ ФУНКЦИЯ logAudio УДАЛЕНА ]] --
 
 local function fetchAndPlaySound(assetId)
     cleanupCurrentSound()
@@ -1166,7 +896,8 @@ local function fetchAndPlaySound(assetId)
         while not loaded and elapsed < timeout do
             elapsed += task.wait(0.1)
         end
-        if conn and not loaded then conn:Disconnect() end
+        if conn and not loaded then conn:Disconnect() end -- Отключаем, если время вышло
+        if conn then conn:Disconnect() end -- На всякий случай
     end
 
     if loaded then
@@ -1203,20 +934,8 @@ game:GetService("RunService").Heartbeat:Connect(function()
     end
 end)
 
--- Мониторинг звуков Boombox
-local function monitorSounds()
-    local function checkDescendant(instance)
-        if instance:IsA("Sound") and instance.SoundId:match("^rbxassetid://%d+$") then
-            logAudio(instance)
-        end
-    end
-
-    workspace.DescendantAdded:Connect(checkDescendant)
-    for _, instance in ipairs(workspace:GetDescendants()) do
-        checkDescendant(instance)
-    end
-end
-task.spawn(monitorSounds)
+-- [[ ФУНКЦИЯ monitorSounds УДАЛЕНА ]] --
+-- [[ ВЫЗОВ task.spawn(monitorSounds) УДАЛЕН ]] --
 
 -- Минимизация/развертывание
 minimizeButton.MouseButton1Click:Connect(function()
@@ -1277,21 +996,20 @@ playStopButton.MouseButton1Click:Connect(function()
     end
 end)
 
+-- [[ НАЧАЛО ИЗМЕНЕННОГО ОБРАБОТЧИКА RepeatButton ]]
 repeatButton.MouseButton1Click:Connect(function()
     isLooping = not isLooping
-    repeatButton.ImageColor3 = isLooping and Color3.fromRGB(0, 120, 215) or Color3.fromRGB(200, 200, 200)
+    -- Изменено ImageColor3 на BackgroundColor3 и цвета для соответствия стилю
+    repeatButton.BackgroundColor3 = isLooping and Color3.fromRGB(0, 120, 215) or Color3.fromRGB(50, 50, 50)
 end)
+-- [[ КОНЕЦ ИЗМЕНЕННОГО ОБРАБОТЧИКА RepeatButton ]]
 
 reverbButton.MouseButton1Click:Connect(function()
     isReverbEnabled = not isReverbEnabled
     updateReverbEffect()
 end)
 
-loggerButton.MouseButton1Click:Connect(function()
-    isLoggingEnabled = not isLoggingEnabled
-    loggerButton.Text = "Логгер: " .. (isLoggingEnabled and "Вкл" or "Выкл")
-    loggerButton.BackgroundColor3 = isLoggingEnabled and Color3.fromRGB(0, 120, 215) or Color3.fromRGB(50, 50, 50)
-end)
+-- [[ ОБРАБОТЧИК loggerButton.MouseButton1Click УДАЛЕН ]] --
 
 local function updateSliderFromInput(input, track, handle, progress, callback, isVertical)
     local trackAbsolutePosition = track.AbsolutePosition
@@ -1385,7 +1103,6 @@ for i = 1, 10 do
     updateEQBandVisuals(i, eqSettings.bands[i])
 end
 
--- Инициализация логгера
-updateAudioLog()
+-- [[ ВЫЗОВ updateAudioLog() В КОНЦЕ УДАЛЕН ]] --
 
 print("Team Nova: AudioMasterUI Initialized")
