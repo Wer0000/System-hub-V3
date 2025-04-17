@@ -1,9 +1,7 @@
 --[[
     AudioMasterUI by Team Nova
     Местоположение: StarterGui (LocalScript)
-    Описание: Профессиональный музыкальный плеер с поиском по ID, полным эквалайзером,
-              перемоткой, повтором трека, списком треков авторов, реверберацией. (Логгер удален, UI и функционал изменены)
-    Ограничения: Поиск по ключевым словам невозможен из-за Roblox API.
+    Описание: Плеер с ID, EQ, реверберацией, визуализатором, списком, настройками. (Версия FINAL v8)
 ]]
 
 -- Сервисы
@@ -15,1025 +13,183 @@ local UserInputService = game:GetService("UserInputService")
 local HttpService = game:GetService("HttpService")
 local TextService = game:GetService("TextService")
 local Chat = game:GetService("Chat")
+local RunService = game:GetService("RunService")
+local LocalizationService = game:GetService("LocalizationService")
 
 -- Локальный игрок
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
--- Переменные
-local currentSoundInstance = nil
-local currentSoundInfo = nil
-local isDraggingSlider = false
-local isDraggingPlayback = false
-local isDraggingEQ = nil
-local creatorInfoCache = {} -- {userId = userName}
-local isMinimized = false
-local isLooping = false
-local isPaused = false
-local creatorMusicList = {  -- Симулируем список треков для авторов
-    ["7135127272"] = {
-        {AssetId = 1835355538, Name = "Sample Track 1"},
-        {AssetId = 1835355540, Name = "Sample Track 2"}
+-- [[ ЛОКАЛИЗАЦИЯ ]]
+local translations = {
+    en = { -- Английские переводы
+        ["Список треков"] = "Track List", ["Найти"] = "Find", ["Название: -"] = "Title: -",
+        ["Создатель: -"] = "Creator: -", ["Длит.: -"] = "Dur.: -", ["Название: "] = "Title: ",
+        ["Создатель: "] = "Creator: ", ["Длительность: "] = "Duration: ", ["Введите Sound ID..."] = "Enter Sound ID...",
+        ["Реверберация: Выкл"] = "Reverb: Off", ["Реверберация: Вкл"] = "Reverb: On",
+        ["Скорость: %.2fx"] = "Speed: %.2fx", ["Очистить"] = "Clear", ["Play"] = "Play",
+        ["Pause"] = "Pause", ["Stop"] = "Stop", ["Повтор"] = "Repeat", ["Настройки"] = "Settings",
+        ["Визуализатор: Вкл"] = "Visualizer: On", ["Визуализатор: Выкл"] = "Visualizer: Off",
+        ["Цвет Палок: Синий"] = "Bar Color: Blue", ["Цвет Палок: Радуга"] = "Bar Color: Rainbow",
+        ["Моя Голова: Вкл"] = "My Head: On", ["Моя Голова: Выкл"] = "My Head: Off",
+        ["Чужие Головы: Вкл"] = "Others: On", ["Чужие Головы: Выкл"] = "Others: Off",
+        ["Сброс Настроек"] = "Reset Settings", ["Ошибка: ID."] = "Error: ID.", ["Ошибка: Инфо."] = "Error: Info.",
+        ["Ошибка: Не звук."] = "Error: Not audio.", ["Ошибка: Загрузка зв..."] = "Error: Loading sound...",
+        ["Ошибка: Загрузка."] = "Error: Load.", ["Загрузка..."] = "Loading...", ["Готово."] = "Ready.",
+        ["ID скопирован."] = "ID Copied.", ["Копирование недоступно."] = "Copy unavailable.",
+        ["Ошибка чата."] = "Chat error.", ["Настройки сброшены"] = "Settings Reset",
+        ["Текущий трек"] = "Current Track", ["Без названия"] = "Untitled", ["Автор: "] = "Creator: ",
+        ["Decay"]="Decay", ["Density"]="Density", ["Diffusion"]="Diffusion", ["Dry"]="Dry", ["Wet"]="Wet",
+        ["Очистить список"] = "Clear List", ["Список очищен"] = "List Cleared",
+    },
+    ru = { -- Русские переводы
+        ["Список треков"] = "Список треков", ["Найти"] = "Найти", ["Название: -"] = "Название: -",
+        ["Создатель: -"] = "Создатель: -", ["Длит.: -"] = "Длит.: -", ["Название: "] = "Название: ",
+        ["Создатель: "] = "Создатель: ", ["Длительность: "] = "Длительность: ", ["Введите Sound ID..."] = "Введите Sound ID...",
+        ["Реверберация: Выкл"] = "Реверберация: Выкл", ["Реверберация: Вкл"] = "Реверберация: Вкл",
+        ["Скорость: %.2fx"] = "Скорость: %.2fx", ["Очистить"] = "Очистить", ["Play"] = "Play",
+        ["Pause"] = "Пауза", ["Stop"] = "Stop", ["Повтор"] = "Повтор", ["Настройки"] = "Настройки",
+        ["Визуализатор: Вкл"] = "Визуализатор: Вкл", ["Визуализатор: Выкл"] = "Визуализатор: Выкл",
+        ["Цвет Палок: Синий"] = "Цвет Палок: Синий", ["Цвет Палок: Радуга"] = "Цвет Палок: Радуга",
+        ["Моя Голова: Вкл"] = "Моя Голова: Вкл", ["Моя Голова: Выкл"] = "Моя Голова: Выкл",
+        ["Чужие Головы: Вкл"] = "Чужие Головы: Вкл", ["Чужие Головы: Выкл"] = "Чужие Головы: Выкл",
+        ["Сброс Настроек"] = "Сброс Настроек", ["Ошибка: ID."] = "Ошибка: ID.", ["Ошибка: Инфо."] = "Ошибка: Инфо.",
+        ["Ошибка: Не звук."] = "Ошибка: Не звук.", ["Ошибка: Загрузка зв..."] = "Ошибка: Загрузка зв...",
+        ["Ошибка: Загрузка."] = "Ошибка: Загрузка.", ["Загрузка..."] = "Загрузка...", ["Готово."] = "Готово.",
+        ["ID скопирован."] = "ID скопирован.", ["Копирование недоступно."] = "Копирование недоступно.",
+        ["Ошибка чата."] = "Ошибка чата.", ["Настройки сброшены"] = "Настройки сброшены",
+        ["Текущий трек"] = "Текущий трек", ["Без названия"] = "Без названия", ["Автор: "] = "Автор: ",
+        ["Decay"]="Затух.", ["Density"]="Плотн.", ["Diffusion"]="Диффуз.", ["Dry"]="Сухой", ["Wet"]="Мокрый",
+        ["Очистить список"] = "Очистить список", ["Список очищен"] = "Список очищен",
     }
 }
-local equalizer = nil -- Эквалайзер
-local reverbEffect = nil -- Реверберация
-local isReverbEnabled = false -- Состояние реверберации
-local isMobile = UserInputService.TouchEnabled -- Определяем платформу
-local scaleFactor = isMobile and 0.7 or 1 -- 70% для мобильных
-local eqSettings = { -- Хранилище настроек эквалайзера
-    bands = {0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5}, -- 10 полос (0=низ, 1=верх)
-}
+local currentLocale = LocalizationService.SystemLocaleId:lower():match("^(%w+)") or "en"
+local lang = translations[currentLocale] or translations.en
+local function getText(key) return lang[key] or key end
 
--- Настройки реверберации
-local reverbSettings = {
-    DecayTime = 1.5,  -- Время затухания (секунды, 0.1–20)
-    Density = 0.5,    -- Плотность (0–1)
-    Diffusion = 0.5,  -- Диффузия (0–1)
-    DryLevel = 0,     -- Уровень сухого сигнала (дБ, -80–0)
-    WetLevel = -6     -- Уровень обработанного сигнала (дБ, -80–0)
-}
+-- Переменные
+local currentSoundInstance = nil; local currentSoundInfo = nil; local isDraggingSlider = false; local isDraggingPlayback = false; local isDraggingEQ = nil; local isDraggingReverbSlider = false; local creatorInfoCache = {}; local isMinimized = false; local isLooping = false; local isPaused = false
+local playedMusicList = {} -- Загружается ниже
+local equalizer = nil; local reverbEffect = nil; local isReverbEnabled = false; local isMobile = UserInputService.TouchEnabled; local scaleFactor = isMobile and 0.7 or 1
 
--- Загрузка сохраненных настроек эквалайзера
-local savedSettings = player:GetAttribute("EQSettings")
-if savedSettings then
-    local success, decoded = pcall(function()
-        return HttpService:JSONDecode(savedSettings)
-    end)
-    if success and decoded then
-        eqSettings = decoded
-        eqSettings.bands = eqSettings.bands or {0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5}
-    end
-end
+-- Настройки по умолчанию
+local defaultEQSettings = { bands = {0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5} }
+local defaultReverbSettings = { DecayTime = 1.5, Density = 0.5, Diffusion = 0.5, DryLevel = 0, WetLevel = -6 }
+local eqSettings, reverbSettings
 
--- Создание ScreenGui
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "AudioMasterUI"
-screenGui.ResetOnSpawn = false
-screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-screenGui.Parent = playerGui
+-- Визуализатор
+local isVisualizerEnabled = true; local visualizerColor = Color3.fromRGB(0, 120, 255); local isRainbowVisualizer = false; local rainbowHue = 0; local visBars = {}; local SMOOTH_FACTOR = 0.3; local LOUDNESS_SCALE = 150; local NUM_VIS_BARS = 25
+-- Тряска Головы
+local myHeadBassEnabled = false; local othersHeadBassEnabled = false; local headScaleTweenInfo = TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out); local baseHeadScale = Vector3.new(1, 1, 1); local maxHeadScaleMultiplier = 1.15; local HEAD_BASS_THRESHOLD = 300
 
--- Основной фрейм
-local mainFrame = Instance.new("Frame")
-mainFrame.Name = "MainFrame"
-mainFrame.Size = UDim2.new(0, 450 * scaleFactor, 0, 520 * scaleFactor)
-mainFrame.Position = UDim2.new(0.5, -225 * scaleFactor, 0.5, -260 * scaleFactor)
-mainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-mainFrame.BorderColor3 = Color3.fromRGB(20, 20, 20)
-mainFrame.BorderSizePixel = 2
-mainFrame.Active = true
-mainFrame.Draggable = true
-mainFrame.Parent = screenGui
+-- [[ ЗАГРУЗКА / СОХРАНЕНИЕ НАСТРОЕК ]]
+local function loadSettings() eqSettings=HttpService:JSONDecode(player:GetAttribute("AudioMasterEQ")or HttpService:JSONEncode(defaultEQSettings));reverbSettings=HttpService:JSONDecode(player:GetAttribute("AudioMasterReverb")or HttpService:JSONEncode(defaultReverbSettings));playedMusicList=HttpService:JSONDecode(player:GetAttribute("AudioMasterList")or"[]");if type(eqSettings)~="table"or type(eqSettings.bands)~="table"or #eqSettings.bands~=10 then eqSettings=table.clone(defaultEQSettings)end;if type(reverbSettings)~="table"or not reverbSettings.DecayTime then reverbSettings=table.clone(defaultReverbSettings)end;if type(playedMusicList)~="table"then playedMusicList={}end;end
+local function saveEQSettings() pcall(player.SetAttribute, player, "AudioMasterEQ", HttpService:JSONEncode(eqSettings)) end
+local function saveReverbSettings() pcall(player.SetAttribute, player, "AudioMasterReverb", HttpService:JSONEncode(reverbSettings)) end
+local function saveMusicList() pcall(player.SetAttribute, player, "AudioMasterList", HttpService:JSONEncode(playedMusicList)) end
 
-local uiCorner = Instance.new("UICorner")
-uiCorner.CornerRadius = UDim.new(0, 10 * scaleFactor)
-uiCorner.Parent = mainFrame
+loadSettings()
 
--- Заголовок
-local titleLabel = Instance.new("TextLabel")
-titleLabel.Name = "TitleLabel"
-titleLabel.Size = UDim2.new(1, -60 * scaleFactor, 0, 40 * scaleFactor)
-titleLabel.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-titleLabel.BorderSizePixel = 0
-titleLabel.Text = "AudioMaster by Team Nova"
-titleLabel.Font = Enum.Font.GothamBold
-titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-titleLabel.TextSize = 20 * scaleFactor
-titleLabel.TextXAlignment = Enum.TextXAlignment.Left
-titleLabel.TextYAlignment = Enum.TextYAlignment.Center
-titleLabel.Parent = mainFrame
-local titlePadding = Instance.new("UIPadding")
-titlePadding.PaddingLeft = UDim.new(0, 10 * scaleFactor)
-titlePadding.Parent = titleLabel
-local titleCorner = Instance.new("UICorner")
-titleCorner.CornerRadius = UDim.new(0, 10 * scaleFactor)
-titleCorner.Parent = titleLabel
+-- Создание ScreenGui и Основного Фрейма
+local screenGui=Instance.new("ScreenGui");screenGui.Name="AudioMasterUI";screenGui.ResetOnSpawn=false;screenGui.ZIndexBehavior=Enum.ZIndexBehavior.Sibling;screenGui.Parent=playerGui
+local mainFrame=Instance.new("Frame");mainFrame.Name="MainFrame";mainFrame.Size=UDim2.new(0,450*scaleFactor,0,530*scaleFactor);mainFrame.Position=UDim2.new(0.5,-225*scaleFactor,0.5,-265*scaleFactor);mainFrame.BackgroundColor3=Color3.fromRGB(30,30,30);mainFrame.BorderColor3=Color3.fromRGB(20,20,20);mainFrame.BorderSizePixel=2;mainFrame.Active=true;mainFrame.Draggable=true;mainFrame.Parent=screenGui
+local mainFrameCorner=Instance.new("UICorner");mainFrameCorner.CornerRadius=UDim.new(0,10*scaleFactor);mainFrameCorner.Parent=mainFrame
 
--- Кнопка минимизации
-local minimizeButton = Instance.new("TextButton")
-minimizeButton.Name = "MinimizeButton"
-minimizeButton.Size = UDim2.new(0, 40 * scaleFactor, 0, 40 * scaleFactor)
-minimizeButton.Position = UDim2.new(1, -80 * scaleFactor, 0, 0)
-minimizeButton.BackgroundTransparency = 1
-minimizeButton.Text = "−"
-minimizeButton.Font = Enum.Font.GothamBold
-minimizeButton.TextColor3 = Color3.fromRGB(200, 200, 200)
-minimizeButton.TextSize = 24 * scaleFactor
-minimizeButton.Parent = mainFrame
+-- Визуализатор (Палки)
+local visualizerContainer=Instance.new("Frame");visualizerContainer.Name="VisualizerContainer";local visHeight=50*scaleFactor;visualizerContainer.Size=UDim2.new(0,mainFrame.Size.X.Offset,0,visHeight);visualizerContainer.Position=UDim2.new(mainFrame.Position.X.Scale,mainFrame.Position.X.Offset,mainFrame.Position.Y.Scale,mainFrame.Position.Y.Offset-visHeight-5*scaleFactor);visualizerContainer.BackgroundTransparency=1;visualizerContainer.ClipsDescendants=true;visualizerContainer.Visible=isVisualizerEnabled;visualizerContainer.Parent=screenGui
+local visListLayout=Instance.new("UIListLayout");visListLayout.FillDirection=Enum.FillDirection.Horizontal;visListLayout.HorizontalAlignment=Enum.HorizontalAlignment.Center;visListLayout.VerticalAlignment=Enum.VerticalAlignment.Bottom;visListLayout.SortOrder=Enum.SortOrder.LayoutOrder;visListLayout.Padding=UDim.new(0,2*scaleFactor);visListLayout.Parent=visualizerContainer;local visBarWidth=math.max(1,(visualizerContainer.Size.X.Offset-(NUM_VIS_BARS+1)*visListLayout.Padding.Offset)/NUM_VIS_BARS);for i=1,NUM_VIS_BARS do local bar=Instance.new("Frame");bar.Name="VisBar_"..i;bar.Size=UDim2.new(0,visBarWidth,0,1);bar.BackgroundColor3=visualizerColor;bar.BorderSizePixel=0;bar.AnchorPoint=Vector2.new(0.5,1);bar.Position=UDim2.new(0.5,0,1,0);bar.Parent=visualizerContainer;local barCorner=Instance.new("UICorner");barCorner.CornerRadius=UDim.new(0,3*scaleFactor);barCorner.Parent=bar;visBars[i]={bar=bar,targetHeight=0,currentHeight=0};end
 
--- Кнопка закрытия
-local closeButton = Instance.new("TextButton")
-closeButton.Name = "CloseButton"
-closeButton.Size = UDim2.new(0, 40 * scaleFactor, 0, 40 * scaleFactor)
-closeButton.Position = UDim2.new(1, -40 * scaleFactor, 0, 0)
-closeButton.BackgroundTransparency = 1
-closeButton.Text = "×"
-closeButton.Font = Enum.Font.GothamBold
-closeButton.TextColor3 = Color3.fromRGB(200, 200, 200)
-closeButton.TextSize = 24 * scaleFactor
-closeButton.Parent = mainFrame
+-- Панель Списка Музыки (Слева, скрыта, с кнопкой очистки)
+local musicListFrame=Instance.new("Frame");musicListFrame.Name="MusicListFrame";local listWidth=200*scaleFactor;musicListFrame.Size=UDim2.new(0,listWidth,0,mainFrame.Size.Y.Offset);musicListFrame.Position=UDim2.new(mainFrame.Position.X.Scale,mainFrame.Position.X.Offset-listWidth-10*scaleFactor,mainFrame.Position.Y.Scale,mainFrame.Position.Y.Offset);musicListFrame.BackgroundColor3=Color3.fromRGB(30,30,30);musicListFrame.BorderColor3=Color3.fromRGB(20,20,20);musicListFrame.BorderSizePixel=2;musicListFrame.Visible=false;musicListFrame.ClipsDescendants=true;musicListFrame.Parent=screenGui;local mlC=Instance.new("UICorner");mlC.CornerRadius=UDim.new(0,10*scaleFactor);mlC.Parent=musicListFrame;local mlT=Instance.new("TextLabel");mlT.Name="Title";mlT.Size=UDim2.new(1,-40*scaleFactor,0,30*scaleFactor);mlT.BackgroundColor3=Color3.fromRGB(20,20,20);mlT.BorderSizePixel=0;mlT.Text=getText("Список треков");mlT.Font=Enum.Font.GothamBold;mlT.TextColor3=Color3.fromRGB(255,255,255);mlT.TextSize=14*scaleFactor;mlT.TextYAlignment=Enum.TextYAlignment.Center;mlT.Parent=musicListFrame;local mltp=Instance.new("UIPadding");mltp.PaddingLeft=UDim.new(0,10*scaleFactor);mltp.Parent=mlT;local mltc=Instance.new("UICorner");mltc.CornerRadius=UDim.new(0,10*scaleFactor);mltc.Parent=mlT
+local clearMusicListButton=Instance.new("TextButton");clearMusicListButton.Name="ClearListBtn";clearMusicListButton.Size=UDim2.new(0,30*scaleFactor,0,30*scaleFactor);clearMusicListButton.Position=UDim2.new(1,-35*scaleFactor,0,0);clearMusicListButton.BackgroundColor3=Color3.fromRGB(180,60,60);clearMusicListButton.Text="X";clearMusicListButton.Font=Enum.Font.GothamBold;clearMusicListButton.TextColor3=Color3.fromRGB(255,255,255);clearMusicListButton.TextSize=14*scaleFactor;clearMusicListButton.Parent=musicListFrame;local clbc=Instance.new("UICorner");clbc.CornerRadius=UDim.new(0,4*scaleFactor);clbc.Parent=clearMusicListButton
+local musicListScroll=Instance.new("ScrollingFrame");musicListScroll.Name="Scroll";musicListScroll.Size=UDim2.new(1,-10*scaleFactor,1,-40*scaleFactor);musicListScroll.Position=UDim2.new(0,5*scaleFactor,0,35*scaleFactor);musicListScroll.BackgroundColor3=Color3.fromRGB(40,40,40);musicListScroll.BorderSizePixel=0;musicListScroll.ScrollBarThickness=6*scaleFactor;musicListScroll.CanvasSize=UDim2.new(0,0,0,0);musicListScroll.Parent=musicListFrame;local mlSC=Instance.new("UICorner");mlSC.CornerRadius=UDim.new(0,6*scaleFactor);mlSC.Parent=musicListScroll;local mlL=Instance.new("UIListLayout");mlL.Padding=UDim.new(0,5*scaleFactor);mlL.SortOrder=Enum.SortOrder.LayoutOrder;mlL.HorizontalAlignment=Enum.HorizontalAlignment.Center;mlL.Parent=musicListScroll;local mlP=Instance.new("UIPadding");mlP.PaddingTop=UDim.new(0,5*scaleFactor);mlP.PaddingLeft=UDim.new(0,5*scaleFactor);mlP.PaddingRight=UDim.new(0,5*scaleFactor);mlP.Parent=musicListScroll
 
--- Поле ввода ID
-local idInputBox = Instance.new("TextBox")
-idInputBox.Name = "IdInputBox"
-idInputBox.Size = UDim2.new(0.6, -5 * scaleFactor, 0, 30 * scaleFactor)
-idInputBox.Position = UDim2.new(0.05, 0, 0, 50 * scaleFactor)
-idInputBox.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-idInputBox.BorderColor3 = Color3.fromRGB(70, 70, 70)
-idInputBox.PlaceholderText = "Введите Sound ID..."
-idInputBox.Font = Enum.Font.Gotham
-idInputBox.TextColor3 = Color3.fromRGB(220, 220, 220)
-idInputBox.TextSize = 16 * scaleFactor
-idInputBox.ClearTextOnFocus = false
-idInputBox.Parent = mainFrame
-local idInputCorner = Instance.new("UICorner")
-idInputCorner.CornerRadius = UDim.new(0, 6 * scaleFactor)
-idInputCorner.Parent = idInputBox
+-- Панель Настроек (Справа)
+local settingsFrame=Instance.new("Frame");settingsFrame.Name="SettingsFrame";settingsFrame.Size=UDim2.new(0,200*scaleFactor,0,190*scaleFactor);settingsFrame.Position=UDim2.new(mainFrame.Position.X.Scale,mainFrame.Position.X.Offset+mainFrame.Size.X.Offset+10*scaleFactor,mainFrame.Position.Y.Scale,mainFrame.Position.Y.Offset);settingsFrame.BackgroundColor3=Color3.fromRGB(30,30,30);settingsFrame.BorderColor3=Color3.fromRGB(20,20,20);settingsFrame.BorderSizePixel=2;settingsFrame.Visible=false;settingsFrame.ClipsDescendants=true;settingsFrame.Parent=screenGui;local sFC=Instance.new("UICorner");sFC.CornerRadius=UDim.new(0,10*scaleFactor);sFC.Parent=settingsFrame;local sLL=Instance.new("UIListLayout");sLL.Padding=UDim.new(0,5*scaleFactor);sLL.SortOrder=Enum.SortOrder.LayoutOrder;sLL.HorizontalAlignment=Enum.HorizontalAlignment.Center;sLL.Parent=settingsFrame;local sPadd=Instance.new("UIPadding");sPadd.PaddingTop=UDim.new(0,10*scaleFactor);sPadd.PaddingBottom=UDim.new(0,10*scaleFactor);sPadd.PaddingLeft=UDim.new(0,10*scaleFactor);sPadd.PaddingRight=UDim.new(0,10*scaleFactor);sPadd.Parent=settingsFrame
+local visToggleButton=Instance.new("TextButton");visToggleButton.Name="VisToggleButton";visToggleButton.Size=UDim2.new(0.9,0,0,25*scaleFactor);visToggleButton.BackgroundColor3=isVisualizerEnabled and Color3.fromRGB(0,120,215)or Color3.fromRGB(50,50,50);visToggleButton.Text=getText(isVisualizerEnabled and"Визуализатор: Вкл"or"Визуализатор: Выкл");visToggleButton.Font=Enum.Font.GothamBold;visToggleButton.TextColor3=Color3.fromRGB(255,255,255);visToggleButton.TextSize=13*scaleFactor;visToggleButton.LayoutOrder=1;visToggleButton.Parent=settingsFrame;local vTC=Instance.new("UICorner");vTC.CornerRadius=UDim.new(0,6*scaleFactor);vTC.Parent=visToggleButton
+local rainbowToggleButton=Instance.new("TextButton");rainbowToggleButton.Name="RainbowToggleButton";rainbowToggleButton.Size=UDim2.new(0.9,0,0,25*scaleFactor);rainbowToggleButton.BackgroundColor3=isRainbowVisualizer and Color3.fromRGB(0,120,215)or Color3.fromRGB(50,50,50);rainbowToggleButton.Text=getText(isRainbowVisualizer and"Цвет Палок: Радуга"or"Цвет Палок: Синий");rainbowToggleButton.Font=Enum.Font.GothamBold;rainbowToggleButton.TextColor3=Color3.fromRGB(255,255,255);rainbowToggleButton.TextSize=13*scaleFactor;rainbowToggleButton.LayoutOrder=2;rainbowToggleButton.Parent=settingsFrame;local rTC=Instance.new("UICorner");rTC.CornerRadius=UDim.new(0,6*scaleFactor);rTC.Parent=rainbowToggleButton
+local myHeadBassButton=Instance.new("TextButton");myHeadBassButton.Name="MyHeadBassButton";myHeadBassButton.Size=UDim2.new(0.9,0,0,25*scaleFactor);myHeadBassButton.BackgroundColor3=myHeadBassEnabled and Color3.fromRGB(0,120,215)or Color3.fromRGB(50,50,50);myHeadBassButton.Text=getText(myHeadBassEnabled and"Моя Голова: Вкл"or"Моя Голова: Выкл");myHeadBassButton.Font=Enum.Font.GothamBold;myHeadBassButton.TextColor3=Color3.fromRGB(255,255,255);myHeadBassButton.TextSize=13*scaleFactor;myHeadBassButton.LayoutOrder=3;myHeadBassButton.Parent=settingsFrame;local myHBC=Instance.new("UICorner");myHBC.CornerRadius=UDim.new(0,6*scaleFactor);myHBC.Parent=myHeadBassButton
+local othersHeadBassButton=Instance.new("TextButton");othersHeadBassButton.Name="OthersHeadBassButton";othersHeadBassButton.Size=UDim2.new(0.9,0,0,25*scaleFactor);othersHeadBassButton.BackgroundColor3=othersHeadBassEnabled and Color3.fromRGB(0,120,215)or Color3.fromRGB(50,50,50);othersHeadBassButton.Text=getText(othersHeadBassEnabled and"Чужие Головы: Вкл"or"Чужие Головы: Выкл");othersHeadBassButton.Font=Enum.Font.GothamBold;othersHeadBassButton.TextColor3=Color3.fromRGB(255,255,255);othersHeadBassButton.TextSize=13*scaleFactor;othersHeadBassButton.LayoutOrder=4;othersHeadBassButton.Parent=settingsFrame;local oHBC=Instance.new("UICorner");oHBC.CornerRadius=UDim.new(0,6*scaleFactor);oHBC.Parent=othersHeadBassButton
+local resetSettingsButton=Instance.new("TextButton");resetSettingsButton.Name="ResetSettingsButton";resetSettingsButton.Size=UDim2.new(0.9,0,0,25*scaleFactor);resetSettingsButton.BackgroundColor3=Color3.fromRGB(180,60,60);resetSettingsButton.Text=getText("Сброс Настроек");resetSettingsButton.Font=Enum.Font.GothamBold;resetSettingsButton.TextColor3=Color3.fromRGB(255,255,255);resetSettingsButton.TextSize=13*scaleFactor;resetSettingsButton.LayoutOrder=5;resetSettingsButton.Parent=settingsFrame;local rstC=Instance.new("UICorner");rstC.CornerRadius=UDim.new(0,6*scaleFactor);rstC.Parent=resetSettingsButton
 
--- Кнопка поиска
-local findButton = Instance.new("TextButton")
-findButton.Name = "FindButton"
-findButton.Size = UDim2.new(0.3, -5 * scaleFactor, 0, 30 * scaleFactor)
-findButton.Position = UDim2.new(0.65, 0, 0, 50 * scaleFactor)
-findButton.BackgroundColor3 = Color3.fromRGB(0, 120, 215)
-findButton.BorderColor3 = Color3.fromRGB(0, 100, 190)
-findButton.Text = "Найти"
-findButton.Font = Enum.Font.GothamBold
-findButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-findButton.TextSize = 16 * scaleFactor
-findButton.Parent = mainFrame
-local findBtnCorner = Instance.new("UICorner")
-findBtnCorner.CornerRadius = UDim.new(0, 6 * scaleFactor)
-findBtnCorner.Parent = findButton
+-- Панель Реверберации (СНАРУЖИ, СНИЗУ)
+local reverbSettingsFrame=Instance.new("Frame");reverbSettingsFrame.Name="ReverbSettingsFrame";local revPW=mainFrame.Size.X.Offset;local revPH=140*scaleFactor;reverbSettingsFrame.Size=UDim2.new(0,revPW,0,revPH);reverbSettingsFrame.Position=UDim2.new(mainFrame.Position.X.Scale,mainFrame.Position.X.Offset,mainFrame.Position.Y.Scale,mainFrame.Position.Y.Offset+mainFrame.Size.Y.Offset+5*scaleFactor);reverbSettingsFrame.BackgroundColor3=Color3.fromRGB(30,30,30);reverbSettingsFrame.BorderColor3=Color3.fromRGB(20,20,20);reverbSettingsFrame.BorderSizePixel=2;reverbSettingsFrame.Visible=false;reverbSettingsFrame.ClipsDescendants=true;reverbSettingsFrame.Parent=screenGui;local revSFC=Instance.new("UICorner");revSFC.CornerRadius=UDim.new(0,10*scaleFactor);revSFC.Parent=reverbSettingsFrame;local revSL=Instance.new("UIListLayout");revSL.Padding=UDim.new(0,5*scaleFactor);revSL.SortOrder=Enum.SortOrder.LayoutOrder;revSL.Parent=reverbSettingsFrame;local revSP=Instance.new("UIPadding");revSP.PaddingTop=UDim.new(0,10*scaleFactor);revSP.PaddingBottom=UDim.new(0,10*scaleFactor);revSP.PaddingLeft=UDim.new(0,10*scaleFactor);revSP.PaddingRight=UDim.new(0,10*scaleFactor);revSP.Parent=reverbSettingsFrame;local reverbSliders={};local reverbUpdaters={}
+local function createReverbSlider(nameKey,key,minV,maxV,order)local sF=Instance.new("Frame");sF.Size=UDim2.new(1,-20*scaleFactor,0,20*scaleFactor);sF.BackgroundTransparency=1;sF.LayoutOrder=order;sF.Parent=reverbSettingsFrame;local lbl=Instance.new("TextLabel");lbl.Name=key.."Label";lbl.Size=UDim2.new(0.4,-5,1,0);lbl.BackgroundTransparency=1;lbl.Font=Enum.Font.Gotham;lbl.TextColor3=Color3.fromRGB(200,200,200);lbl.TextSize=12*scaleFactor;lbl.TextXAlignment=Enum.TextXAlignment.Left;lbl.Text=getText(nameKey)..": "..string.format("%.1f",reverbSettings[key]);lbl.Parent=sF;local trk=Instance.new("Frame");trk.Name=key.."Track";trk.Size=UDim2.new(0.6,-5,0,8*scaleFactor);trk.Position=UDim2.new(0.4,0,0.5,-4*scaleFactor);trk.BackgroundColor3=Color3.fromRGB(70,70,70);trk.BorderSizePixel=0;trk.Parent=sF;local tC=Instance.new("UICorner");tC.CornerRadius=UDim.new(0,4*scaleFactor);tC.Parent=trk;local prog=Instance.new("Frame");prog.Name=key.."Progress";local iP=math.clamp((reverbSettings[key]-minV)/(maxV-minV),0,1);prog.Size=UDim2.new(iP,0,1,0);prog.BackgroundColor3=Color3.fromRGB(0,120,215);prog.BorderSizePixel=0;prog.Parent=trk;local pC=Instance.new("UICorner");pC.CornerRadius=UDim.new(0,4*scaleFactor);pC.Parent=prog;local hnd=Instance.new("ImageButton");hnd.Name=key.."Handle";hnd.Size=UDim2.new(0,12*scaleFactor,0,12*scaleFactor);hnd.AnchorPoint=Vector2.new(0.5,0.5);hnd.Position=UDim2.new(iP,0,0.5,0);hnd.BackgroundColor3=Color3.fromRGB(200,200,200);hnd.Image="rbxassetid://3926305904";hnd.ImageColor3=Color3.fromRGB(220,220,220);hnd.ScaleType=Enum.ScaleType.Slice;hnd.SliceCenter=Rect.new(100,100,100,100);hnd.BorderSizePixel=0;hnd.Parent=trk;local sId=key;reverbSliders[sId]=false;local function updateVal(v)local nV=minV+(maxV-minV)*v;if key=="DryLevel"or key=="WetLevel"then nV=math.clamp(nV,-80,0)end;reverbSettings[key]=nV;lbl.Text=getText(nameKey)..": "..string.format("%.1f",nV);local pV=math.clamp((nV-minV)/(maxV-minV),0,1);prog.Size=UDim2.new(pV,0,1,0);hnd.Position=UDim2.new(pV,0,0.5,0);if reverbEffect then pcall(function() reverbEffect[key]=nV end) end;saveReverbSettings();end;if hnd then hnd.InputBegan:Connect(function(i)if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then reverbSliders[sId]=true;isDraggingReverbSlider=true;end end)else warn("Reverb Handle nil:"..key)end;if trk then trk.InputBegan:Connect(function(i)if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then reverbSliders[sId]=true;isDraggingReverbSlider=true;local r=math.clamp((i.Position.X-trk.AbsolutePosition.X)/trk.AbsoluteSize.X,0,1);updateVal(r);end end)else warn("Reverb Track nil:"..key)end;if hnd then hnd.InputEnded:Connect(function(i)if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then reverbSliders[sId]=false;isDraggingReverbSlider=false;end end)end;if trk then trk.InputEnded:Connect(function(i)if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then reverbSliders[sId]=false;isDraggingReverbSlider=false;end end)end;reverbUpdaters[sId]={u=updateVal,t=trk,h=hnd,p=prog,min=minV,max=maxV,lbl=lbl,nameKey=nameKey};end;createReverbSlider("Decay","DecayTime",0.1,20,1);createReverbSlider("Density","Density",0,1,2);createReverbSlider("Diffusion","Diffusion",0,1,3);createReverbSlider("Dry","DryLevel",-80,0,4);createReverbSlider("Wet","WetLevel",-80,0,5);
 
--- Информация о звуке
-local infoFrame = Instance.new("Frame")
-infoFrame.Name = "InfoFrame"
-infoFrame.Size = UDim2.new(0.9, 0, 0, 100 * scaleFactor)
-infoFrame.Position = UDim2.new(0.05, 0, 0, 90 * scaleFactor)
-infoFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-infoFrame.BorderSizePixel = 0
-infoFrame.ClipsDescendants = true
-infoFrame.Parent = mainFrame
-local infoCorner = Instance.new("UICorner")
-infoCorner.CornerRadius = UDim.new(0, 6 * scaleFactor)
-infoCorner.Parent = infoFrame
-local uiPadding = Instance.new("UIPadding")
-uiPadding.PaddingTop = UDim.new(0, 5 * scaleFactor)
-uiPadding.PaddingBottom = UDim.new(0, 5 * scaleFactor)
-uiPadding.PaddingLeft = UDim.new(0, 10 * scaleFactor)
-uiPadding.PaddingRight = UDim.new(0, 10 * scaleFactor)
-uiPadding.Parent = infoFrame
-local uiListLayout = Instance.new("UIListLayout")
-uiListLayout.Padding = UDim.new(0, 3 * scaleFactor)
-uiListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-uiListLayout.Parent = infoFrame
-local titleInfoLabel = Instance.new("TextLabel")
-titleInfoLabel.Name = "TitleInfo"
-titleInfoLabel.Size = UDim2.new(1, 0, 0, 20 * scaleFactor)
-titleInfoLabel.BackgroundTransparency = 1
-titleInfoLabel.Font = Enum.Font.Gotham
-titleInfoLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-titleInfoLabel.TextSize = 14 * scaleFactor
-titleInfoLabel.TextXAlignment = Enum.TextXAlignment.Left
-titleInfoLabel.Text = "Название: -"
-titleInfoLabel.LayoutOrder = 1
-titleInfoLabel.Parent = infoFrame
-local creatorInfoLabel = Instance.new("TextLabel")
-creatorInfoLabel.Name = "CreatorInfo"
-creatorInfoLabel.Size = UDim2.new(1, 0, 0, 20 * scaleFactor)
-creatorInfoLabel.BackgroundTransparency = 1
-creatorInfoLabel.Font = Enum.Font.Gotham
-creatorInfoLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-creatorInfoLabel.TextSize = 14 * scaleFactor
-creatorInfoLabel.TextXAlignment = Enum.TextXAlignment.Left
-creatorInfoLabel.Text = "Создатель: -"
-creatorInfoLabel.LayoutOrder = 2
-creatorInfoLabel.Parent = infoFrame
-local durationInfoLabel = Instance.new("TextLabel")
-durationInfoLabel.Name = "DurationInfo"
-durationInfoLabel.Size = UDim2.new(1, 0, 0, 20 * scaleFactor)
-durationInfoLabel.BackgroundTransparency = 1
-durationInfoLabel.Font = Enum.Font.Gotham
-durationInfoLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-durationInfoLabel.TextSize = 14 * scaleFactor
-durationInfoLabel.TextXAlignment = Enum.TextXAlignment.Left
-durationInfoLabel.Text = "Длительность: -"
-durationInfoLabel.LayoutOrder = 3
-durationInfoLabel.Parent = infoFrame
-local statusLabel = Instance.new("TextLabel")
-statusLabel.Name = "StatusLabel"
-statusLabel.Size = UDim2.new(1, 0, 0, 20 * scaleFactor)
-statusLabel.Position = UDim2.new(0, 0, 1, -25 * scaleFactor)
-statusLabel.BackgroundTransparency = 1
-statusLabel.Font = Enum.Font.Gotham
-statusLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
-statusLabel.TextSize = 12 * scaleFactor
-statusLabel.TextXAlignment = Enum.TextXAlignment.Left
-statusLabel.Text = ""
-statusLabel.Parent = infoFrame
+-- Заголовок и кнопки заголовка
+local titleLabel=Instance.new("TextLabel");titleLabel.Name="TitleLabel";titleLabel.Size=UDim2.new(1,-205*scaleFactor,0,40*scaleFactor);titleLabel.BackgroundColor3=Color3.fromRGB(20,20,20);titleLabel.BorderSizePixel=0;titleLabel.Text="AudioMaster";titleLabel.Font=Enum.Font.GothamBold;titleLabel.TextColor3=Color3.fromRGB(255,255,255);titleLabel.TextSize=20*scaleFactor;titleLabel.TextXAlignment=Enum.TextXAlignment.Left;titleLabel.TextYAlignment=Enum.TextYAlignment.Center;titleLabel.Parent=mainFrame;local tp=Instance.new("UIPadding");tp.PaddingLeft=UDim.new(0,10*scaleFactor);tp.Parent=titleLabel;local tc=Instance.new("UICorner");tc.CornerRadius=UDim.new(0,10*scaleFactor);tc.Parent=titleLabel
+local musicListButton=Instance.new("TextButton");musicListButton.Name="MusicListButton";musicListButton.Size=UDim2.new(0,40*scaleFactor,0,40*scaleFactor);musicListButton.Position=UDim2.new(1,-200*scaleFactor,0,0);musicListButton.BackgroundTransparency=1;musicListButton.Text="☰";musicListButton.Font=Enum.Font.GothamBold;musicListButton.TextColor3=Color3.fromRGB(200,200,200);musicListButton.TextSize=24*scaleFactor;musicListButton.Parent=mainFrame
+local visStatusLabel=Instance.new("TextLabel");visStatusLabel.Name="VisStatusLabel";visStatusLabel.Size=UDim2.new(0,40*scaleFactor,0,40*scaleFactor);visStatusLabel.Position=UDim2.new(1,-160*scaleFactor,0,0);visStatusLabel.BackgroundTransparency=1;visStatusLabel.Font=Enum.Font.Gotham;visStatusLabel.Text=isVisualizerEnabled and"Vis:Вкл"or"Vis:Выкл";visStatusLabel.TextColor3=isVisualizerEnabled and Color3.fromRGB(0,200,0)or Color3.fromRGB(200,0,0);visStatusLabel.TextSize=11*scaleFactor;visStatusLabel.TextXAlignment=Enum.TextXAlignment.Right;visStatusLabel.TextYAlignment=Enum.TextYAlignment.Center;visStatusLabel.Parent=mainFrame
+local settingsButton=Instance.new("TextButton");settingsButton.Name="SettingsButton";settingsButton.Size=UDim2.new(0,40*scaleFactor,0,40*scaleFactor);settingsButton.Position=UDim2.new(1,-120*scaleFactor,0,0);settingsButton.BackgroundTransparency=1;settingsButton.Text="⚙️";settingsButton.Font=Enum.Font.GothamBold;settingsButton.TextColor3=Color3.fromRGB(200,200,200);settingsButton.TextSize=24*scaleFactor;settingsButton.Parent=mainFrame
+local minimizeButton=Instance.new("TextButton");minimizeButton.Name="MinimizeButton";minimizeButton.Size=UDim2.new(0,40*scaleFactor,0,40*scaleFactor);minimizeButton.Position=UDim2.new(1,-80*scaleFactor,0,0);minimizeButton.BackgroundTransparency=1;minimizeButton.Text="−";minimizeButton.Font=Enum.Font.GothamBold;minimizeButton.TextColor3=Color3.fromRGB(200,200,200);minimizeButton.TextSize=24*scaleFactor;minimizeButton.Parent=mainFrame
+local closeButton=Instance.new("TextButton");closeButton.Name="CloseButton";closeButton.Size=UDim2.new(0,40*scaleFactor,0,40*scaleFactor);closeButton.Position=UDim2.new(1,-40*scaleFactor,0,0);closeButton.BackgroundTransparency=1;closeButton.Text="×";closeButton.Font=Enum.Font.GothamBold;closeButton.TextColor3=Color3.fromRGB(200,200,200);closeButton.TextSize=24*scaleFactor;closeButton.Parent=mainFrame
 
--- Эквалайзер и кнопка реверберации
-local equalizerFrame = Instance.new("Frame")
-equalizerFrame.Name = "EqualizerFrame"
-equalizerFrame.Size = UDim2.new(0.9, 0, 0, 140 * scaleFactor) -- Оставляем место под кнопку
-equalizerFrame.Position = UDim2.new(0.05, 0, 0, 200 * scaleFactor)
-equalizerFrame.BackgroundTransparency = 1
-equalizerFrame.Parent = mainFrame
-
-local eqBands = {}
-local bandFrequencies = {31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000} -- Гц
-for i = 1, 10 do
-    local bandFrame = Instance.new("Frame")
-    bandFrame.Size = UDim2.new(0.09, 0, 1, -40 * scaleFactor)
-    bandFrame.Position = UDim2.new((i - 1) * 0.1, 0, 0, 0)
-    bandFrame.BackgroundTransparency = 1
-    bandFrame.Parent = equalizerFrame
-
-    local eqLabel = Instance.new("TextLabel")
-    eqLabel.Size = UDim2.new(1, 0, 0, 15 * scaleFactor)
-    eqLabel.BackgroundTransparency = 1
-    eqLabel.Font = Enum.Font.Gotham
-    eqLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-    eqLabel.TextSize = 12 * scaleFactor
-    eqLabel.Text = bandFrequencies[i] .. " Hz"
-    eqLabel.TextXAlignment = Enum.TextXAlignment.Center
-    eqLabel.Parent = bandFrame
-
-    local eqTrack = Instance.new("Frame")
-    eqTrack.Size = UDim2.new(1, 0, 1, -15 * scaleFactor)
-    eqTrack.Position = UDim2.new(0, 0, 0, 15 * scaleFactor)
-    eqTrack.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
-    eqTrack.BorderSizePixel = 0
-    eqTrack.Parent = bandFrame
-    local eqTrackCorner = Instance.new("UICorner")
-    eqTrackCorner.CornerRadius = UDim.new(0, 4 * scaleFactor)
-    eqTrackCorner.Parent = eqTrack
-
-    local eqProgress = Instance.new("Frame")
-    eqProgress.Size = UDim2.new(1, 0, 0.5, 0) -- 0.5 = середина
-    eqProgress.Position = UDim2.new(0, 0, 1, 0)
-    eqProgress.AnchorPoint = Vector2.new(0, 1)
-    eqProgress.BackgroundColor3 = Color3.fromRGB(0, 120, 215)
-    eqProgress.BorderSizePixel = 0
-    eqProgress.Parent = eqTrack
-    local eqProgressCorner = Instance.new("UICorner")
-    eqProgressCorner.CornerRadius = UDim.new(0, 4 * scaleFactor)
-    eqProgressCorner.Parent = eqProgress
-
-    local eqHandle = Instance.new("ImageButton")
-    eqHandle.Size = UDim2.new(0, 16 * scaleFactor, 0, 16 * scaleFactor)
-    eqHandle.AnchorPoint = Vector2.new(0.5, 0.5)
-    eqHandle.Position = UDim2.new(0.5, 0, 0.5, 0) -- Начальная позиция Y = 0.5 (середина)
-    eqHandle.BackgroundColor3 = Color3.fromRGB(200, 200, 200)
-    eqHandle.Image = "rbxassetid://3926305904"
-    eqHandle.ImageColor3 = Color3.fromRGB(220, 220, 220)
-    eqHandle.ScaleType = Enum.ScaleType.Slice
-    eqHandle.SliceCenter = Rect.new(100, 100, 100, 100)
-    eqHandle.BorderSizePixel = 0
-    eqHandle.Parent = eqTrack
-
-    eqBands[i] = {track = eqTrack, progress = eqProgress, handle = eqHandle}
-end
-
--- Кнопка реверберации
-local reverbButton = Instance.new("TextButton")
-reverbButton.Name = "ReverbButton"
-reverbButton.Size = UDim2.new(0.3, 0, 0, 30 * scaleFactor)
-reverbButton.Position = UDim2.new(0, 0, 1, -30 * scaleFactor) -- Позиция внизу equalizerFrame
-reverbButton.AnchorPoint = Vector2.new(0, 1)
-reverbButton.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-reverbButton.BorderColor3 = Color3.fromRGB(70, 70, 70)
-reverbButton.Text = "Реверберация: Выкл"
-reverbButton.Font = Enum.Font.GothamBold
-reverbButton.TextColor3 = Color3.fromRGB(200, 200, 200)
-reverbButton.TextSize = 14 * scaleFactor
-reverbButton.Parent = equalizerFrame -- Остается внутри equalizerFrame
-
-local reverbBtnCorner = Instance.new("UICorner")
-reverbBtnCorner.CornerRadius = UDim.new(0, 6 * scaleFactor)
-reverbBtnCorner.Parent = reverbButton
-
--- [[ ИЗМЕНЕНО: Настройки реверберации - теперь дочерний элемент mainFrame, позиция снизу ]]
-local reverbSettingsFrame = Instance.new("Frame")
-reverbSettingsFrame.Name = "ReverbSettingsFrame"
-local reverbFrameWidth = 245 * scaleFactor -- Ширина осталась прежней
-reverbSettingsFrame.Size = UDim2.new(0, reverbFrameWidth, 0, 130 * scaleFactor)
--- Позиционируем ПОД mainFrame, по центру горизонтально
-reverbSettingsFrame.Position = UDim2.new(0.5, -reverbFrameWidth / 2, 1, 10 * scaleFactor) -- 10 пикселей ниже mainFrame
-reverbSettingsFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30) -- Такой же фон, как у mainFrame
-reverbSettingsFrame.BorderColor3 = Color3.fromRGB(20, 20, 20)
-reverbSettingsFrame.BorderSizePixel = 2
-reverbSettingsFrame.Visible = false -- Скрыт по умолчанию
-reverbSettingsFrame.Parent = mainFrame -- <<< Теперь дочерний элемент mainFrame
-
-local reverbSettingsCorner = Instance.new("UICorner")
-reverbSettingsCorner.CornerRadius = UDim.new(0, 10 * scaleFactor) -- Как у mainFrame
-reverbSettingsCorner.Parent = reverbSettingsFrame
-
-local reverbSettingsList = Instance.new("UIListLayout")
-reverbSettingsList.Padding = UDim.new(0, 5 * scaleFactor)
-reverbSettingsList.SortOrder = Enum.SortOrder.LayoutOrder
-reverbSettingsList.Parent = reverbSettingsFrame
-
-local reverbSettingsPadding = Instance.new("UIPadding")
-reverbSettingsPadding.PaddingTop = UDim.new(0, 10 * scaleFactor)
-reverbSettingsPadding.PaddingBottom = UDim.new(0, 10 * scaleFactor)
-reverbSettingsPadding.PaddingLeft = UDim.new(0, 10 * scaleFactor)
-reverbSettingsPadding.PaddingRight = UDim.new(0, 10 * scaleFactor)
-reverbSettingsPadding.Parent = reverbSettingsFrame
-
--- [[ ИЗМЕНЕНО: Создание слайдеров реверберации (внутри перемещенного фрейма) ]]
-local function createReverbSlider(name, key, minValue, maxValue, defaultValue, layoutOrder)
-    local sliderFrame = Instance.new("Frame")
-    sliderFrame.Size = UDim2.new(1, 0, 0, 20 * scaleFactor)
-    sliderFrame.BackgroundTransparency = 1
-    sliderFrame.LayoutOrder = layoutOrder
-    sliderFrame.Parent = reverbSettingsFrame -- Указываем правильного родителя
-
-    local label = Instance.new("TextLabel")
-    label.Size = UDim2.new(0.4, -5, 1, 0)
-    label.BackgroundTransparency = 1
-    label.Font = Enum.Font.Gotham
-    label.TextColor3 = Color3.fromRGB(200, 200, 200)
-    label.TextSize = 12 * scaleFactor
-    label.TextXAlignment = Enum.TextXAlignment.Left
-    label.Text = name .. ": " .. string.format("%.1f", reverbSettings[key])
-    label.Parent = sliderFrame
-
-    local track = Instance.new("Frame")
-    track.Size = UDim2.new(0.6, -5, 0, 8 * scaleFactor)
-    track.Position = UDim2.new(0.4, 0, 0.5, -4 * scaleFactor)
-    track.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
-    track.BorderSizePixel = 0
-    track.Parent = sliderFrame
-    local trackCorner = Instance.new("UICorner")
-    trackCorner.CornerRadius = UDim.new(0, 4 * scaleFactor)
-    trackCorner.Parent = track
-
-    local progress = Instance.new("Frame")
-    progress.Size = UDim2.new(math.max(0, (reverbSettings[key] - minValue) / (maxValue - minValue)), 0, 1, 0)
-    progress.BackgroundColor3 = Color3.fromRGB(0, 120, 215)
-    progress.BorderSizePixel = 0
-    progress.Parent = track
-    local progressCorner = Instance.new("UICorner")
-    progressCorner.CornerRadius = UDim.new(0, 4 * scaleFactor)
-    progressCorner.Parent = progress
-
-    local handle = Instance.new("ImageButton")
-    handle.Size = UDim2.new(0, 12 * scaleFactor, 0, 12 * scaleFactor)
-    handle.AnchorPoint = Vector2.new(0.5, 0.5)
-    handle.Position = UDim2.new(math.max(0, (reverbSettings[key] - minValue) / (maxValue - minValue)), 0, 0.5, 0)
-    handle.BackgroundColor3 = Color3.fromRGB(200, 200, 200)
-    handle.Image = "rbxassetid://3926305904"
-    handle.ImageColor3 = Color3.fromRGB(220, 220, 220)
-    handle.ScaleType = Enum.ScaleType.Slice
-    handle.SliceCenter = Rect.new(100, 100, 100, 100)
-    handle.BorderSizePixel = 0
-    handle.Parent = track
-
-    local isDragging = false
-    local function updateValue(value)
-        local newValue = minValue + (maxValue - minValue) * value
-        if key == "DryLevel" or key == "WetLevel" then
-            newValue = math.clamp(newValue, -80, 0)
-        end
-        reverbSettings[key] = newValue
-        label.Text = name .. ": " .. string.format("%.1f", newValue)
-        local progressValue = math.clamp((newValue - minValue) / (maxValue - minValue), 0, 1)
-        progress.Size = UDim2.new(progressValue, 0, 1, 0)
-        handle.Position = UDim2.new(progressValue, 0, 0.5, 0)
-        if reverbEffect then
-            reverbEffect[key] = newValue
-        end
-    end
-
-    handle.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            isDragging = true
-        end
-    end)
-    track.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            isDragging = true
-            local relative = math.clamp((input.Position.X - track.AbsolutePosition.X) / track.AbsoluteSize.X, 0, 1)
-            updateValue(relative)
-        end
-    end)
-    UserInputService.InputChanged:Connect(function(input)
-        if isDragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-            local relative = math.clamp((input.Position.X - track.AbsolutePosition.X) / track.AbsoluteSize.X, 0, 1)
-            updateValue(relative)
-        end
-    end)
-    UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            isDragging = false
-        end
-    end)
-    return sliderFrame
-end
-
--- Создаем слайдеры внутри перемещенного фрейма
-createReverbSlider("Decay", "DecayTime", 0.1, 20, reverbSettings.DecayTime, 1)
-createReverbSlider("Density", "Density", 0, 1, reverbSettings.Density, 2)
-createReverbSlider("Diffusion", "Diffusion", 0, 1, reverbSettings.Diffusion, 3)
-createReverbSlider("Dry", "DryLevel", -80, 0, reverbSettings.DryLevel, 4)
-createReverbSlider("Wet", "WetLevel", -80, 0, reverbSettings.WetLevel, 5)
-
--- Слайдер воспроизведения
-local playbackFrame = Instance.new("Frame")
-playbackFrame.Name = "PlaybackFrame"
-playbackFrame.Size = UDim2.new(0.9, 0, 0, 40 * scaleFactor)
-playbackFrame.Position = UDim2.new(0.05, 0, 0, 350 * scaleFactor)
-playbackFrame.BackgroundTransparency = 1
-playbackFrame.Parent = mainFrame
-local playbackLabel = Instance.new("TextLabel")
-playbackLabel.Name = "PlaybackLabel"
-playbackLabel.Size = UDim2.new(1, 0, 0, 15 * scaleFactor)
-playbackLabel.BackgroundTransparency = 1
-playbackLabel.Font = Enum.Font.Gotham
-playbackLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-playbackLabel.TextSize = 14 * scaleFactor
-playbackLabel.TextXAlignment = Enum.TextXAlignment.Left
-playbackLabel.Text = "0:00 / 0:00"
-playbackLabel.Parent = playbackFrame
-local playbackTrack = Instance.new("Frame")
-playbackTrack.Name = "Track"
-playbackTrack.Size = UDim2.new(1, 0, 0, 8 * scaleFactor)
-playbackTrack.Position = UDim2.new(0, 0, 0, 20 * scaleFactor)
-playbackTrack.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
-playbackTrack.BorderSizePixel = 0
-playbackTrack.Parent = playbackFrame
-local playbackTrackCorner = Instance.new("UICorner")
-playbackTrackCorner.CornerRadius = UDim.new(0, 6 * scaleFactor)
-playbackTrackCorner.Parent = playbackTrack
-local playbackProgress = Instance.new("Frame")
-playbackProgress.Name = "Progress"
-playbackProgress.Size = UDim2.new(0, 0, 1, 0)
-playbackProgress.BackgroundColor3 = Color3.fromRGB(0, 120, 215)
-playbackProgress.BorderSizePixel = 0
-playbackProgress.Parent = playbackTrack
-local playbackProgressCorner = Instance.new("UICorner")
-playbackProgressCorner.CornerRadius = UDim.new(0, 6 * scaleFactor)
-playbackProgressCorner.Parent = playbackProgress
-local playbackHandle = Instance.new("ImageButton")
-playbackHandle.Name = "Handle"
-playbackHandle.Size = UDim2.new(0, 16 * scaleFactor, 0, 16 * scaleFactor)
-playbackHandle.AnchorPoint = Vector2.new(0.5, 0.5)
-playbackHandle.Position = UDim2.new(0, 0, 0.5, 0)
-playbackHandle.BackgroundColor3 = Color3.fromRGB(200, 200, 200)
-playbackHandle.Image = "rbxassetid://3926305904"
-playbackHandle.ImageColor3 = Color3.fromRGB(220, 220, 220)
-playbackHandle.ScaleType = Enum.ScaleType.Slice
-playbackHandle.SliceCenter = Rect.new(100, 100, 100, 100)
-playbackHandle.BorderSizePixel = 0
-playbackHandle.Parent = playbackTrack
-
--- Слайдер скорости
-local sliderFrame = Instance.new("Frame")
-sliderFrame.Name = "SliderFrame"
-sliderFrame.Size = UDim2.new(0.9, 0, 0, 40 * scaleFactor)
-sliderFrame.Position = UDim2.new(0.05, 0, 0, 400 * scaleFactor)
-sliderFrame.BackgroundTransparency = 1
-sliderFrame.Parent = mainFrame
-local sliderLabel = Instance.new("TextLabel")
-sliderLabel.Name = "SliderLabel"
-sliderLabel.Size = UDim2.new(1, 0, 0, 15 * scaleFactor)
-sliderLabel.BackgroundTransparency = 1
-sliderLabel.Font = Enum.Font.Gotham
-sliderLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-sliderLabel.TextSize = 14 * scaleFactor
-sliderLabel.TextXAlignment = Enum.TextXAlignment.Left
-sliderLabel.Text = "Скорость: 1.00x"
-sliderLabel.Parent = sliderFrame
-local sliderTrack = Instance.new("Frame")
-sliderTrack.Name = "Track"
-sliderTrack.Size = UDim2.new(1, 0, 0, 8 * scaleFactor)
-sliderTrack.Position = UDim2.new(0, 0, 0, 20 * scaleFactor)
-sliderTrack.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
-sliderTrack.BorderSizePixel = 0
-sliderTrack.Parent = sliderFrame
-local trackCorner = Instance.new("UICorner")
-trackCorner.CornerRadius = UDim.new(0, 6 * scaleFactor)
-trackCorner.Parent = sliderTrack
-local sliderProgress = Instance.new("Frame")
-sliderProgress.Name = "Progress"
-sliderProgress.Size = UDim2.new(0.5, 0, 1, 0) -- 1.0x в диапазоне 0.0-2.0
-sliderProgress.BackgroundColor3 = Color3.fromRGB(0, 120, 215)
-sliderProgress.BorderSizePixel = 0
-sliderProgress.Parent = sliderTrack
-local progressCorner = Instance.new("UICorner")
-progressCorner.CornerRadius = UDim.new(0, 6 * scaleFactor)
-progressCorner.Parent = sliderProgress
-local sliderHandle = Instance.new("ImageButton")
-sliderHandle.Name = "Handle"
-sliderHandle.Size = UDim2.new(0, 16 * scaleFactor, 0, 16 * scaleFactor)
-sliderHandle.AnchorPoint = Vector2.new(0.5, 0.5)
-sliderHandle.Position = UDim2.new(0.5, 0, 0.5, 0) -- 1.0x в диапазоне 0.0-2.0
-sliderHandle.BackgroundColor3 = Color3.fromRGB(200, 200, 200)
-sliderHandle.Image = "rbxassetid://3926305904"
-sliderHandle.ImageColor3 = Color3.fromRGB(220, 220, 220)
-sliderHandle.ScaleType = Enum.ScaleType.Slice
-sliderHandle.SliceCenter = Rect.new(100, 100, 100, 100)
-sliderHandle.BorderSizePixel = 0
-sliderHandle.Parent = sliderTrack
-
--- Кнопки управления
-local controlFrame = Instance.new("Frame")
-controlFrame.Name = "ControlFrame"
-controlFrame.Size = UDim2.new(0.9, 0, 0, 50 * scaleFactor)
-controlFrame.Position = UDim2.new(0.05, 0, 0, 450 * scaleFactor)
-controlFrame.BackgroundTransparency = 1
-controlFrame.Parent = mainFrame
-local clearButton = Instance.new("TextButton")
-clearButton.Name = "ClearButton"
-clearButton.Size = UDim2.new(0.2, -5 * scaleFactor, 0, 40 * scaleFactor)
-clearButton.Position = UDim2.new(0, 0, 0, 0)
-clearButton.BackgroundColor3 = Color3.fromRGB(180, 60, 60)
-clearButton.BorderColor3 = Color3.fromRGB(150, 40, 40)
-clearButton.Text = "Очистить"
-clearButton.Font = Enum.Font.GothamBold
-clearButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-clearButton.TextSize = 14 * scaleFactor
-clearButton.Parent = controlFrame
-local clearBtnCorner = Instance.new("UICorner")
-clearBtnCorner.CornerRadius = UDim.new(0, 6 * scaleFactor)
-clearBtnCorner.Parent = clearButton
-local playStopButton = Instance.new("TextButton")
-playStopButton.Name = "PlayStopButton"
-playStopButton.Size = UDim2.new(0.2, -5 * scaleFactor, 0, 40 * scaleFactor)
-playStopButton.Position = UDim2.new(0.25, 0, 0, 0)
-playStopButton.BackgroundColor3 = Color3.fromRGB(60, 180, 60) -- Play
-playStopButton.BorderColor3 = Color3.fromRGB(40, 150, 40)
-playStopButton.Text = "Play"
-playStopButton.Font = Enum.Font.GothamBold
-playStopButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-playStopButton.TextSize = 14 * scaleFactor
-playStopButton.AutoButtonColor = false
-playStopButton.Parent = controlFrame
-local playStopBtnCorner = Instance.new("UICorner")
-playStopBtnCorner.CornerRadius = UDim.new(0, 6 * scaleFactor)
-playStopBtnCorner.Parent = playStopButton
-local repeatButton = Instance.new("TextButton")
-repeatButton.Name = "RepeatButton"
-repeatButton.Size = UDim2.new(0.2, -5 * scaleFactor, 0, 40 * scaleFactor)
-repeatButton.Position = UDim2.new(0.5, 0, 0, 0)
-repeatButton.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-repeatButton.Text = "Повтор"
-repeatButton.Font = Enum.Font.GothamBold
-repeatButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-repeatButton.TextSize = 14 * scaleFactor
-repeatButton.Parent = controlFrame
-local repeatBtnCorner = Instance.new("UICorner")
-repeatBtnCorner.CornerRadius = UDim.new(0, 6 * scaleFactor)
-repeatBtnCorner.Parent = repeatButton
-
--- Левый фрейм (информация о текущем треке)
-local leftFrame = Instance.new("Frame")
-leftFrame.Name = "MusicInfoFrame"
-leftFrame.Size = UDim2.new(0, 200 * scaleFactor, 0, 150 * scaleFactor)
-leftFrame.Position = UDim2.new(0, -210 * scaleFactor, 0.5, -75 * scaleFactor)
-leftFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-leftFrame.BorderColor3 = Color3.fromRGB(20, 20, 20)
-leftFrame.BorderSizePixel = 2
-leftFrame.Parent = screenGui
-local leftCorner = Instance.new("UICorner")
-leftCorner.CornerRadius = UDim.new(0, 10 * scaleFactor)
-leftCorner.Parent = leftFrame
-local leftTitle = Instance.new("TextLabel")
-leftTitle.Size = UDim2.new(1, 0, 0, 30 * scaleFactor)
-leftTitle.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-leftTitle.BorderSizePixel = 0
-leftTitle.Text = "Текущий трек"
-leftTitle.Font = Enum.Font.GothamBold
-leftTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
-leftTitle.TextSize = 16 * scaleFactor
-leftTitle.Parent = leftFrame
-local leftTitleCorner = Instance.new("UICorner")
-leftTitleCorner.CornerRadius = UDim.new(0, 10 * scaleFactor)
-leftTitleCorner.Parent = leftTitle
-local leftInfoFrame = Instance.new("Frame")
-leftInfoFrame.Size = UDim2.new(0.9, 0, 0, 100 * scaleFactor)
-leftInfoFrame.Position = UDim2.new(0.05, 0, 0, 40 * scaleFactor)
-leftInfoFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-leftInfoFrame.BorderSizePixel = 0
-leftInfoFrame.Parent = leftFrame
-local leftInfoCorner = Instance.new("UICorner")
-leftInfoCorner.CornerRadius = UDim.new(0, 6 * scaleFactor)
-leftInfoCorner.Parent = leftInfoFrame
-local leftPadding = Instance.new("UIPadding")
-leftPadding.PaddingTop = UDim.new(0, 5 * scaleFactor)
-leftPadding.PaddingLeft = UDim.new(0, 10 * scaleFactor)
-leftPadding.PaddingRight = UDim.new(0, 10 * scaleFactor)
-leftPadding.Parent = leftInfoFrame
-local leftListLayout = Instance.new("UIListLayout")
-leftListLayout.Padding = UDim.new(0, 3 * scaleFactor)
-leftListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-leftListLayout.Parent = leftInfoFrame
-local leftTitleInfo = Instance.new("TextLabel")
-leftTitleInfo.Size = UDim2.new(1, 0, 0, 20 * scaleFactor)
-leftTitleInfo.BackgroundTransparency = 1
-leftTitleInfo.Font = Enum.Font.Gotham
-leftTitleInfo.TextColor3 = Color3.fromRGB(200, 200, 200)
-leftTitleInfo.TextSize = 14 * scaleFactor
-leftTitleInfo.TextXAlignment = Enum.TextXAlignment.Left
-leftTitleInfo.Text = "Название: -"
-leftTitleInfo.LayoutOrder = 1
-leftTitleInfo.Parent = leftInfoFrame
-local leftCreatorInfo = Instance.new("TextLabel")
-leftCreatorInfo.Size = UDim2.new(1, 0, 0, 20 * scaleFactor)
-leftCreatorInfo.BackgroundTransparency = 1
-leftCreatorInfo.Font = Enum.Font.Gotham
-leftCreatorInfo.TextColor3 = Color3.fromRGB(200, 200, 200)
-leftCreatorInfo.TextSize = 14 * scaleFactor
-leftCreatorInfo.TextXAlignment = Enum.TextXAlignment.Left
-leftCreatorInfo.Text = "Создатель: -"
-leftCreatorInfo.LayoutOrder = 2
-leftCreatorInfo.Parent = leftInfoFrame
-local leftDurationInfo = Instance.new("TextLabel")
-leftDurationInfo.Size = UDim2.new(1, 0, 0, 20 * scaleFactor)
-leftDurationInfo.BackgroundTransparency = 1
-leftDurationInfo.Font = Enum.Font.Gotham
-leftDurationInfo.TextColor3 = Color3.fromRGB(200, 200, 200)
-leftDurationInfo.TextSize = 14 * scaleFactor
-leftDurationInfo.TextXAlignment = Enum.TextXAlignment.Left
-leftDurationInfo.Text = "Длительность: -"
-leftDurationInfo.LayoutOrder = 3
-leftDurationInfo.Parent = leftInfoFrame
-
+-- Остальные UI основного окна
+local idInputBox=Instance.new("TextBox");idInputBox.Name="IdInputBox";idInputBox.Size=UDim2.new(0.6,-5*scaleFactor,0,30*scaleFactor);idInputBox.Position=UDim2.new(0.05,0,0,50*scaleFactor);idInputBox.BackgroundColor3=Color3.fromRGB(50,50,50);idInputBox.BorderColor3=Color3.fromRGB(70,70,70);idInputBox.PlaceholderText=getText("Введите Sound ID...");idInputBox.Font=Enum.Font.Gotham;idInputBox.TextColor3=Color3.fromRGB(220,220,220);idInputBox.TextSize=16*scaleFactor;idInputBox.ClearTextOnFocus=false;idInputBox.Parent=mainFrame;local idIC=Instance.new("UICorner");idIC.CornerRadius=UDim.new(0,6*scaleFactor);idIC.Parent=idInputBox
+local findButton=Instance.new("TextButton");findButton.Name="FindButton";findButton.Size=UDim2.new(0.3,-5*scaleFactor,0,30*scaleFactor);findButton.Position=UDim2.new(0.65,0,0,50*scaleFactor);findButton.BackgroundColor3=Color3.fromRGB(0,120,215);findButton.BorderColor3=Color3.fromRGB(0,100,190);findButton.Text=getText("Найти");findButton.Font=Enum.Font.GothamBold;findButton.TextColor3=Color3.fromRGB(255,255,255);findButton.TextSize=16*scaleFactor;findButton.Parent=mainFrame;local findBC=Instance.new("UICorner");findBC.CornerRadius=UDim.new(0,6*scaleFactor);findBC.Parent=findButton
+local infoFrame=Instance.new("Frame");infoFrame.Name="InfoFrame";infoFrame.Size=UDim2.new(0.9,0,0,100*scaleFactor);infoFrame.Position=UDim2.new(0.05,0,0,90*scaleFactor);infoFrame.BackgroundColor3=Color3.fromRGB(40,40,40);infoFrame.BorderSizePixel=0;infoFrame.ClipsDescendants=true;infoFrame.Parent=mainFrame;local infoC=Instance.new("UICorner");infoC.CornerRadius=UDim.new(0,6*scaleFactor);infoC.Parent=infoFrame;local iPadd=Instance.new("UIPadding");iPadd.PaddingTop=UDim.new(0,5*scaleFactor);iPadd.PaddingBottom=UDim.new(0,5*scaleFactor);iPadd.PaddingLeft=UDim.new(0,10*scaleFactor);iPadd.PaddingRight=UDim.new(0,10*scaleFactor);iPadd.Parent=infoFrame;local iList=Instance.new("UIListLayout");iList.Padding=UDim.new(0,3*scaleFactor);iList.SortOrder=Enum.SortOrder.LayoutOrder;iList.Parent=infoFrame;local titleInfoLabel=Instance.new("TextLabel");titleInfoLabel.Name="TitleInfo";titleInfoLabel.Size=UDim2.new(1,0,0,20*scaleFactor);titleInfoLabel.BackgroundTransparency=1;titleInfoLabel.Font=Enum.Font.Gotham;titleInfoLabel.TextColor3=Color3.fromRGB(200,200,200);titleInfoLabel.TextSize=14*scaleFactor;titleInfoLabel.TextXAlignment=Enum.TextXAlignment.Left;titleInfoLabel.Text=getText("Название: -");titleInfoLabel.LayoutOrder=1;titleInfoLabel.Parent=infoFrame;local creatorInfoLabel=Instance.new("TextLabel");creatorInfoLabel.Name="CreatorInfo";creatorInfoLabel.Size=UDim2.new(1,0,0,20*scaleFactor);creatorInfoLabel.BackgroundTransparency=1;creatorInfoLabel.Font=Enum.Font.Gotham;creatorInfoLabel.TextColor3=Color3.fromRGB(200,200,200);creatorInfoLabel.TextSize=14*scaleFactor;creatorInfoLabel.TextXAlignment=Enum.TextXAlignment.Left;creatorInfoLabel.Text=getText("Создатель: -");creatorInfoLabel.LayoutOrder=2;creatorInfoLabel.Parent=infoFrame;local durationInfoLabel=Instance.new("TextLabel");durationInfoLabel.Name="DurationInfo";durationInfoLabel.Size=UDim2.new(1,0,0,20*scaleFactor);durationInfoLabel.BackgroundTransparency=1;durationInfoLabel.Font=Enum.Font.Gotham;durationInfoLabel.TextColor3=Color3.fromRGB(200,200,200);durationInfoLabel.TextSize=14*scaleFactor;durationInfoLabel.TextXAlignment=Enum.TextXAlignment.Left;durationInfoLabel.Text=getText("Длит.: -");durationInfoLabel.LayoutOrder=3;durationInfoLabel.Parent=infoFrame;local statusLabel=Instance.new("TextLabel");statusLabel.Name="StatusLabel";statusLabel.Size=UDim2.new(1,0,0,20*scaleFactor);statusLabel.Position=UDim2.new(0,0,1,-25*scaleFactor);statusLabel.BackgroundTransparency=1;statusLabel.Font=Enum.Font.Gotham;statusLabel.TextColor3=Color3.fromRGB(180,180,180);statusLabel.TextSize=12*scaleFactor;statusLabel.TextXAlignment=Enum.TextXAlignment.Left;statusLabel.Text="";statusLabel.Parent=infoFrame
+local equalizerFrame=Instance.new("Frame");equalizerFrame.Name="EqualizerFrame";equalizerFrame.Size=UDim2.new(0.9,0,0,120*scaleFactor);equalizerFrame.Position=UDim2.new(0.05,0,0,195*scaleFactor);equalizerFrame.BackgroundTransparency=1;equalizerFrame.Parent=mainFrame
+local eqBands={}; local bandFreqs={31,62,125,250,500,1000,2000,4000,8000,16000}; for i=1,10 do local bF=Instance.new("Frame");bF.Size=UDim2.new(0.09,0,1,0);bF.Position=UDim2.new((i-1)*0.1+0.005,0,0,0);bF.BackgroundTransparency=1;bF.Parent=equalizerFrame;local eL=Instance.new("TextLabel");eL.Size=UDim2.new(1,0,0,15*scaleFactor);eL.BackgroundTransparency=1;eL.Font=Enum.Font.Gotham;eL.TextColor3=Color3.fromRGB(200,200,200);eL.TextSize=12*scaleFactor;eL.Text=bandFreqs[i].."Hz";eL.TextXAlignment=Enum.TextXAlignment.Center;eL.Parent=bF;local eT=Instance.new("Frame");eT.Name="EQTrack"..i;eT.Size=UDim2.new(1,0,1,-15*scaleFactor);eT.Position=UDim2.new(0,0,0,15*scaleFactor);eT.BackgroundColor3=Color3.fromRGB(70,70,70);eT.BorderSizePixel=0;eT.Parent=bF;local eTC=Instance.new("UICorner");eTC.CornerRadius=UDim.new(0,4*scaleFactor);eTC.Parent=eT;local eP=Instance.new("Frame");eP.Name="EQProg"..i;eP.Size=UDim2.new(1,0,eqSettings.bands[i] or 0.5,0);eP.Position=UDim2.new(0,0,1,0);eP.AnchorPoint=Vector2.new(0,1);eP.BackgroundColor3=Color3.fromRGB(0,120,215);eP.BorderSizePixel=0;eP.Parent=eT;local ePC=Instance.new("UICorner");ePC.CornerRadius=UDim.new(0,4*scaleFactor);ePC.Parent=eP;local eH=Instance.new("ImageButton");eH.Name="EQHandle"..i;eH.Size=UDim2.new(0,16*scaleFactor,0,16*scaleFactor);eH.AnchorPoint=Vector2.new(0.5,0.5);eH.Position=UDim2.new(0.5,0,1-(eqSettings.bands[i] or 0.5),0);eH.BackgroundColor3=Color3.fromRGB(200,200,200);eH.Image="rbxassetid://3926305904";eH.ImageColor3=Color3.fromRGB(220,220,220);eH.ScaleType=Enum.ScaleType.Slice;eH.SliceCenter=Rect.new(100,100,100,100);eH.BorderSizePixel=0;eH.Parent=eT;eqBands[i]={track=eT,progress=eP,handle=eH};end
+local playbackFrame=Instance.new("Frame");playbackFrame.Name="PlaybackFrame";playbackFrame.Size=UDim2.new(0.9,0,0,40*scaleFactor);playbackFrame.Position=UDim2.new(0.05,0,0,350*scaleFactor);playbackFrame.BackgroundTransparency=1;playbackFrame.Parent=mainFrame; local pL=Instance.new("TextLabel");pL.Name="PlaybackLabel";pL.Size=UDim2.new(1,0,0,15*scaleFactor);pL.BackgroundTransparency=1;pL.Font=Enum.Font.Gotham;pL.TextColor3=Color3.fromRGB(200,200,200);pL.TextSize=14*scaleFactor;pL.TextXAlignment=Enum.TextXAlignment.Left;pL.Text="0:00 / 0:00";pL.Parent=playbackFrame; local pT=Instance.new("Frame");pT.Name="Track";pT.Size=UDim2.new(1,0,0,8*scaleFactor);pT.Position=UDim2.new(0,0,0,20*scaleFactor);pT.BackgroundColor3=Color3.fromRGB(70,70,70);pT.BorderSizePixel=0;pT.Parent=playbackFrame; local pTC=Instance.new("UICorner");pTC.CornerRadius=UDim.new(0,6*scaleFactor);pTC.Parent=pT; local pP=Instance.new("Frame");pP.Name="Progress";pP.Size=UDim2.new(0,0,1,0);pP.BackgroundColor3=Color3.fromRGB(0,120,215);pP.BorderSizePixel=0;pP.Parent=pT; local pPC=Instance.new("UICorner");pPC.CornerRadius=UDim.new(0,6*scaleFactor);pPC.Parent=pP; local pH=Instance.new("ImageButton");pH.Name="Handle";pH.Size=UDim2.new(0,16*scaleFactor,0,16*scaleFactor);pH.AnchorPoint=Vector2.new(0.5,0.5);pH.Position=UDim2.new(0,0,0.5,0);pH.BackgroundColor3=Color3.fromRGB(200,200,200);pH.Image="rbxassetid://3926305904";pH.ImageColor3=Color3.fromRGB(220,220,220);pH.ScaleType=Enum.ScaleType.Slice;pH.SliceCenter=Rect.new(100,100,100,100);pH.BorderSizePixel=0;pH.Parent=pT
+local controlFrame=Instance.new("Frame");controlFrame.Name="ControlFrame";controlFrame.Size=UDim2.new(0.9,0,0,50*scaleFactor);controlFrame.Position=UDim2.new(0.05,0,0,395*scaleFactor);controlFrame.BackgroundTransparency=1;controlFrame.Visible=true;controlFrame.Parent=mainFrame;local cL=Instance.new("UIListLayout");cL.FillDirection=Enum.FillDirection.Horizontal;cL.HorizontalAlignment=Enum.HorizontalAlignment.Center;cL.VerticalAlignment=Enum.VerticalAlignment.Center;cL.Padding=UDim.new(0,10*scaleFactor);cL.Parent=controlFrame
+local clearButton=Instance.new("TextButton");clearButton.Name="ClearButton";clearButton.Size=UDim2.new(0,75*scaleFactor,1,-10*scaleFactor);clearButton.BackgroundColor3=Color3.fromRGB(180,60,60);clearButton.Text=getText("Очистить");clearButton.Font=Enum.Font.GothamBold;clearButton.TextColor3=Color3.fromRGB(255,255,255);clearButton.TextSize=13*scaleFactor;clearButton.Parent=controlFrame;local cBC=Instance.new("UICorner");cBC.CornerRadius=UDim.new(0,6*scaleFactor);cBC.Parent=clearButton
+local playPauseButton=Instance.new("TextButton");playPauseButton.Name="PlayPauseButton";playPauseButton.Size=UDim2.new(0,75*scaleFactor,1,-10*scaleFactor);playPauseButton.BackgroundColor3=Color3.fromRGB(60,180,60);playPauseButton.Text=getText("Play");playPauseButton.Font=Enum.Font.GothamBold;playPauseButton.TextColor3=Color3.fromRGB(255,255,255);playPauseButton.TextSize=13*scaleFactor;playPauseButton.AutoButtonColor=false;playPauseButton.Parent=controlFrame;local pPBC=Instance.new("UICorner");pPBC.CornerRadius=UDim.new(0,6*scaleFactor);pPBC.Parent=playPauseButton
+local stopButton=Instance.new("TextButton");stopButton.Name="StopButton";stopButton.Size=UDim2.new(0,75*scaleFactor,1,-10*scaleFactor);stopButton.BackgroundColor3=Color3.fromRGB(180,60,60);stopButton.Text=getText("Stop");stopButton.Font=Enum.Font.GothamBold;stopButton.TextColor3=Color3.fromRGB(255,255,255);stopButton.TextSize=13*scaleFactor;stopButton.Parent=controlFrame;local sBC=Instance.new("UICorner");sBC.CornerRadius=UDim.new(0,6*scaleFactor);sBC.Parent=stopButton
+local repeatButton=Instance.new("TextButton");repeatButton.Name="RepeatButton";repeatButton.Size=UDim2.new(0,75*scaleFactor,1,-10*scaleFactor);repeatButton.BackgroundColor3=Color3.fromRGB(50,50,50);repeatButton.Text=getText("Повтор");repeatButton.Font=Enum.Font.GothamBold;repeatButton.TextColor3=Color3.fromRGB(255,255,255);repeatButton.TextSize=13*scaleFactor;repeatButton.Parent=controlFrame;local rptBC=Instance.new("UICorner");rptBC.CornerRadius=UDim.new(0,6*scaleFactor);rptBC.Parent=repeatButton
+local sliderFrame=Instance.new("Frame");sliderFrame.Name="SliderFrame";sliderFrame.Size=UDim2.new(0.9,0,0,40*scaleFactor);sliderFrame.Position=UDim2.new(0.05,0,0,450*scaleFactor);sliderFrame.BackgroundTransparency=1;sliderFrame.Parent=mainFrame; local sL=Instance.new("TextLabel");sL.Name="SliderLabel";sL.Size=UDim2.new(1,0,0,15*scaleFactor);sL.BackgroundTransparency=1;sL.Font=Enum.Font.Gotham;sL.TextColor3=Color3.fromRGB(200,200,200);sL.TextSize=14*scaleFactor;sL.TextXAlignment=Enum.TextXAlignment.Left;sL.Text=getText("Скорость: %.2fx"):format(1.00);sL.Parent=sliderFrame; local sT=Instance.new("Frame");sT.Name="Track";sT.Size=UDim2.new(1,0,0,8*scaleFactor);sT.Position=UDim2.new(0,0,0,20*scaleFactor);sT.BackgroundColor3=Color3.fromRGB(70,70,70);sT.BorderSizePixel=0;sT.Parent=sliderFrame; local sTC=Instance.new("UICorner");sTC.CornerRadius=UDim.new(0,6*scaleFactor);sTC.Parent=sT; local sP=Instance.new("Frame");sP.Name="Progress";sP.Size=UDim2.new(0.5,0,1,0);sP.BackgroundColor3=Color3.fromRGB(0,120,215);sP.BorderSizePixel=0;sP.Parent=sT; local sPC=Instance.new("UICorner");sPC.CornerRadius=UDim.new(0,6*scaleFactor);sPC.Parent=sP; local sH=Instance.new("ImageButton");sH.Name="Handle";sH.Size=UDim2.new(0,16*scaleFactor,0,16*scaleFactor);sH.AnchorPoint=Vector2.new(0.5,0.5);sH.Position=UDim2.new(0.5,0,0.5,0);sH.BackgroundColor3=Color3.fromRGB(200,200,200);sH.Image="rbxassetid://3926305904";sH.ImageColor3=Color3.fromRGB(220,220,220);sH.ScaleType=Enum.ScaleType.Slice;sH.SliceCenter=Rect.new(100,100,100,100);sH.BorderSizePixel=0;sH.Parent=sT
+local reverbButton=Instance.new("TextButton");reverbButton.Name="ReverbButton";reverbButton.Size=UDim2.new(0.9,0,0,30*scaleFactor);reverbButton.Position=UDim2.new(0.05,0,0,495*scaleFactor);reverbButton.BackgroundColor3=Color3.fromRGB(50,50,50);reverbButton.BorderColor3=Color3.fromRGB(70,70,70);reverbButton.Text=getText("Реверберация: Выкл");reverbButton.Font=Enum.Font.GothamBold;reverbButton.TextColor3=Color3.fromRGB(200,200,200);reverbButton.TextSize=14*scaleFactor;reverbButton.Parent=mainFrame;local rBC=Instance.new("UICorner");rBC.CornerRadius=UDim.new(0,6*scaleFactor);rBC.Parent=reverbButton
 
 -- Функции
-local function setStatus(text, isError)
-    statusLabel.Text = text
-    statusLabel.TextColor3 = isError and Color3.fromRGB(255, 80, 80) or Color3.fromRGB(180, 180, 180)
-end
+local function setStatus(textKey,isError,...)if statusLabel then local txt=getText(textKey);statusLabel.Text=string.format(txt,...);statusLabel.TextColor3=isError and Color3.fromRGB(255,80,80)or Color3.fromRGB(180,180,180);end end
+local function formatTime(s)if s==0 or s==math.huge or s==nil then return"0:00"end;local m=math.floor(s/60);local rS=math.floor(s%60);return string.format("%d:%02d",m,rS);end
+local function updateSliderVisuals(v)local mS=0.0;local xS=2.0;local s=mS+(xS-mS)*v;if sP then sP.Size=UDim2.new(v,0,1,0);end;if sH then sH.Position=UDim2.new(v,0,0.5,0);end;if sL then sL.Text=getText("Скорость: %.2fx"):format(s);end;if currentSoundInstance then pcall(function() currentSoundInstance.PlaybackSpeed=math.max(0.01,s) end) end end
+local function updateEQBandVisuals(bI,eqV) local b=eqBands[bI];if not b then return end;eqV=math.clamp(eqV or 0.5,0,1);if b.progress then b.progress.Size=UDim2.new(1,0,eqV,0);end;if b.handle then b.handle.Position=UDim2.new(0.5,0,1-eqV,0);end;eqSettings.bands[bI]=eqV;saveEQSettings();if equalizer then local lowSum,midSum,highSum=0,0,0;local lowC,midC,highC=0,0,0;for i=1,10 do local cV=eqSettings.bands[i]or 0.5;local g=(cV*48)-24;if i<=2 then lowSum=lowSum+g;lowC=lowC+1 elseif i<=7 then midSum=midSum+g;midC=midC+1 else highSum=highSum+g;highC=highC+1 end end;pcall(function()equalizer.LowGain=(lowC>0)and(lowSum/lowC)or 0 end);pcall(function()equalizer.MidGain=(midC>0)and(midSum/midC)or 0 end);pcall(function()equalizer.HighGain=(highC>0)and(highSum/highC)or 0 end);end end
+local function updateReverbEffect()if reverbEffect then pcall(function()reverbEffect.Enabled=isReverbEnabled;reverbEffect.DecayTime=reverbSettings.DecayTime;reverbEffect.Density=reverbSettings.Density;reverbEffect.Diffusion=reverbSettings.Diffusion;reverbEffect.DryLevel=reverbSettings.DryLevel;reverbEffect.WetLevel=reverbSettings.WetLevel;end)end;if reverbButton then reverbButton.Text=getText(isReverbEnabled and"Реверберация: Вкл"or"Реверберация: Выкл");reverbButton.BackgroundColor3=isReverbEnabled and Color3.fromRGB(0,120,215)or Color3.fromRGB(50,50,50);end;if reverbSettingsFrame then reverbSettingsFrame.Visible=isReverbEnabled;end;end
+local function updatePlaybackVisuals(v)v=math.clamp(v or 0,0,1);if currentSoundInstance and currentSoundInstance.TimeLength>0 then local tPos=v*currentSoundInstance.TimeLength;if pP then pP.Size=UDim2.new(v,0,1,0);end;if pH then pH.Position=UDim2.new(v,0,0.5,0);end;if pL then pL.Text=formatTime(tPos).." / "..formatTime(currentSoundInstance.TimeLength);end;if isDraggingPlayback and currentSoundInstance.PlaybackSpeed>0 then pcall(function() currentSoundInstance.TimePosition=tPos end) end else if pP then pP.Size=UDim2.new(0,0,1,0);end;if pH then pH.Position=UDim2.new(0,0,0.5,0);end;if pL then pL.Text="0:00 / 0:00";end;end end
+local function updateMusicListDisplay()if not musicListScroll then return end;for _,item in ipairs(musicListScroll:GetChildren())do if item:IsA("Frame")then pcall(item.Destroy,item)end end;local totalH=0;for idx,trackData in ipairs(playedMusicList)do local iF=Instance.new("Frame");iF.Name="Track_"..trackData.AssetId;iF.Size=UDim2.new(1,-10*scaleFactor,0,65*scaleFactor);iF.BackgroundColor3=Color3.fromRGB(55,55,55);iF.BorderSizePixel=0;iF.LayoutOrder=idx;iF.Parent=musicListScroll;local iC=Instance.new("UICorner");iC.CornerRadius=UDim.new(0,4*scaleFactor);iC.Parent=iF;local iP=Instance.new("UIPadding");iP.PaddingLeft=UDim.new(0,5*scaleFactor);iP.PaddingRight=UDim.new(0,5*scaleFactor);iP.PaddingTop=UDim.new(0,5*scaleFactor);iP.PaddingBottom=UDim.new(0,5*scaleFactor);iP.Parent=iF;local tF=Instance.new("Frame");tF.Size=UDim2.new(1,0,0.5,-2*scaleFactor);tF.BackgroundTransparency=1;tF.Parent=iF;local tFL=Instance.new("UIListLayout");tFL.Parent=tF;local tLbl=Instance.new("TextLabel");tLbl.Size=UDim2.new(1,0,0,14*scaleFactor);tLbl.BackgroundTransparency=1;tLbl.Font=Enum.Font.Gotham;tLbl.TextColor3=Color3.fromRGB(220,220,220);tLbl.TextSize=12*scaleFactor;tLbl.Text=trackData.Name or getText("Без названия");tLbl.TextXAlignment=Enum.TextXAlignment.Left;tLbl.TextTruncate=Enum.TextTruncate.AtEnd;tLbl.Parent=tF;local nfoLbl=Instance.new("TextLabel");nfoLbl.Size=UDim2.new(1,0,0,12*scaleFactor);nfoLbl.BackgroundTransparency=1;nfoLbl.Font=Enum.Font.Gotham;nfoLbl.TextColor3=Color3.fromRGB(180,180,180);nfoLbl.TextSize=10*scaleFactor;nfoLbl.Text=trackData.AssetId.." ("..(trackData.DurationStr or"?")..")";nfoLbl.TextXAlignment=Enum.TextXAlignment.Left;nfoLbl.Parent=tF;local bF=Instance.new("Frame");bF.Size=UDim2.new(1,0,0.5,-2*scaleFactor);bF.Position=UDim2.new(0,0,0.5,2*scaleFactor);bF.BackgroundTransparency=1;bF.Parent=iF;local bL=Instance.new("UIListLayout");bL.FillDirection=Enum.FillDirection.Horizontal;bL.HorizontalAlignment=Enum.HorizontalAlignment.Left;bL.Padding=UDim.new(0,5*scaleFactor);bL.Parent=bF;local plB=Instance.new("TextButton");plB.Name="PlayListBtn";plB.Size=UDim2.new(0,50*scaleFactor,1,0);plB.BackgroundColor3=Color3.fromRGB(60,180,60);plB.Text=getText("Play");plB.Font=Enum.Font.GothamBold;plB.TextColor3=Color3.fromRGB(255,255,255);plB.TextSize=12*scaleFactor;plB.Parent=bL;local plBC=Instance.new("UICorner");plBC.CornerRadius=UDim.new(0,4*scaleFactor);plBC.Parent=plB;local cpB=Instance.new("TextButton");cpB.Name="CopyListBtn";cpB.Size=UDim2.new(0,50*scaleFactor,1,0);cpB.BackgroundColor3=Color3.fromRGB(100,100,100);cpB.Text="Copy";cpB.Font=Enum.Font.GothamBold;cpB.TextColor3=Color3.fromRGB(255,255,255);cpB.TextSize=12*scaleFactor;cpB.Parent=bL;local cpBC=Instance.new("UICorner");cpBC.CornerRadius=UDim.new(0,4*scaleFactor);cpBC.Parent=cpB;local syB=Instance.new("TextButton");syB.Name="SayListBtn";syB.Size=UDim2.new(0,50*scaleFactor,1,0);syB.BackgroundColor3=Color3.fromRGB(0,120,215);syB.Text="Say";syB.Font=Enum.Font.GothamBold;syB.TextColor3=Color3.fromRGB(255,255,255);syB.TextSize=12*scaleFactor;syB.Parent=bL;local syBC=Instance.new("UICorner");syBC.CornerRadius=UDim.new(0,4*scaleFactor);syBC.Parent=syB;if plB then plB.MouseButton1Click:Connect(function()fetchAndPlaySound(trackData.AssetId)end)else warn("Play button nil in list")end;if cpB then cpB.MouseButton1Click:Connect(function()local suc,clip=pcall(getclipboard);local s=tostring(trackData.AssetId);if suc and setclipboard then setclipboard(s);setStatus("ID скопирован.",false)else setclipboard=nil;setStatus("Копирование недоступно.",true)end end)else warn("Copy button nil in list")end;if syB then syB.MouseButton1Click:Connect(function()local msg="/e playing roblox.com/library/"..tostring(trackData.AssetId);local suc,err=pcall(function()if player.Character and player.Character.Head then Chat:Chat(player.Character.Head,msg,Enum.ChatColor.White)else error("No character/head")end end);if not suc then warn("Chat error:",err);setStatus("Ошибка чата.",true)end end)else warn("Say button nil in list")end;totalH=totalH+iF.AbsoluteSize.Y+mlL.Padding.Offset;end;if musicListScroll then musicListScroll.CanvasSize=UDim2.new(0,0,0,math.max(totalH,musicListScroll.AbsoluteSize.Y));end end
+local function cleanupCurrentSound() if currentSoundInstance then pcall(function() currentSoundInstance:Stop() end); pcall(function() currentSoundInstance:Destroy() end); currentSoundInstance=nil; end; currentSoundInfo=nil; equalizer=nil; reverbEffect=nil; isPaused=false; if playPauseButton then playPauseButton.Text=getText("Play"); playPauseButton.BackgroundColor3=Color3.fromRGB(60,180,60); end; if visualizerContainer then visualizerContainer.Visible=false; end; for i=1,NUM_VIS_BARS do if visBars[i] and visBars[i].bar then visBars[i].targetHeight=0;visBars[i].currentHeight=0;visBars[i].bar.Size=UDim2.new(visBars[i].bar.Size.X.Scale,visBars[i].bar.Size.X.Offset,0,1);end end; end
+local function clearInfo()cleanupCurrentSound();if titleInfoLabel then titleInfoLabel.Text=getText("Название: -")end;if creatorInfoLabel then creatorInfoLabel.Text=getText("Создатель: -")end;if durationInfoLabel then durationInfoLabel.Text=getText("Длит.: -")end;if leftTitleInfo then leftTitleInfo.Text=getText("Название: -")end;if leftCreatorInfo then leftCreatorInfo.Text=getText("Создатель: -")end;if leftDurationInfo then leftDurationInfo.Text=getText("Длит.: -")end;setStatus("", false);updateSliderVisuals(0.5);updatePlaybackVisuals(0);isLooping=false;if repeatButton then repeatButton.BackgroundColor3=Color3.fromRGB(50,50,50);end;end
+local function fetchAndPlaySound(assetId) cleanupCurrentSound();setStatus("Загрузка...",false);local s,result=pcall(function()return MarketplaceService:GetProductInfo(assetId,Enum.InfoType.Asset)end);if not s or not result then setStatus("Ошибка: Инфо.",true);return end;if result.AssetTypeId~=Enum.AssetType.Audio.Value then setStatus("Ошибка: Не звук.",true);return end;currentSoundInfo=result;local tN=result.Name or getText("Без названия");if titleInfoLabel then titleInfoLabel.Text=getText("Название: ")..tN end;if leftTitleInfo then leftTitleInfo.Text=getText("Название: ")..tN end;local cN="?";local cId=tostring(result.Creator.CreatorTargetId);if creatorInfoCache[cId]then cN=creatorInfoCache[cId]elseif result.Creator.Name then cN=result.Creator.Name;creatorInfoCache[cId]=cN end;if creatorInfoLabel then creatorInfoLabel.Text=getText("Автор: ")..cN.." ("..cId..")"end;if leftCreatorInfo then leftCreatorInfo.Text=getText("Создатель: ")..cN.." ("..cId..")"end;setStatus("Загрузка зв...",false);local sound=Instance.new("Sound");sound.Name="UISound_"..assetId;sound.SoundId="rbxassetid://"..assetId;sound.Volume=0.7;local sV=0.5;if sH then sV=sH.Position.X.Scale end;local mSp=0.0;local xSp=2.0;local tSp=mSp+(xSp-mSp)*sV;sound.PlaybackSpeed=math.max(0.01,tSp);sound.RollOffMaxDistance=10000;sound.RollOffMinDistance=10;sound.RollOffMode=Enum.RollOffMode.InverseTapered;sound.Parent=SoundService;equalizer=Instance.new("EqualizerSoundEffect");if eqSettings and eqSettings.bands then local bands=eqSettings.bands;local g1,g2,g3,g4,g5,g6,g7,g8,g9,g10=bands[1]or 0.5,bands[2]or 0.5,bands[3]or 0.5,bands[4]or 0.5,bands[5]or 0.5,bands[6]or 0.5,bands[7]or 0.5,bands[8]or 0.5,bands[9]or 0.5,bands[10]or 0.5;equalizer.LowGain=(g1*48-24+g2*48-24)/2;equalizer.MidGain=(g3*48-24+g4*48-24+g5*48-24+g6*48-24)/4;equalizer.HighGain=(g7*48-24+g8*48-24+g9*48-24+g10*48-24)/4;else equalizer.LowGain=0;equalizer.MidGain=0;equalizer.HighGain=0;end;equalizer.Parent=sound;reverbEffect=Instance.new("ReverbSoundEffect");reverbEffect.DecayTime=reverbSettings.DecayTime;reverbEffect.Density=reverbSettings.Density;reverbEffect.Diffusion=reverbSettings.Diffusion;reverbEffect.DryLevel=reverbSettings.DryLevel;reverbEffect.WetLevel=reverbSettings.WetLevel;reverbEffect.Enabled=isReverbEnabled;reverbEffect.Parent=sound;currentSoundInstance=sound;local loaded=false;local loadSuccess,loadResult=pcall(function()loaded=sound.Loaded:Wait(10)end);if loadSuccess and loaded then local dS=formatTime(sound.TimeLength);if durationInfoLabel then durationInfoLabel.Text=getText("Длит.: -")..dS end;if leftDurationInfo then leftDurationInfo.Text=getText("Длительность: ")..dS end;setStatus("Готово.",false);sound:Play();isPaused=false;if playPauseButton then playPauseButton.Text=getText("Pause");playPauseButton.BackgroundColor3=Color3.fromRGB(255,140,0)end;updatePlaybackVisuals(0);if visualizerContainer then visualizerContainer.Visible=isVisualizerEnabled end;local alreadyInList=false;for _,existingTrack in ipairs(playedMusicList)do if existingTrack.AssetId==assetId then alreadyInList=true;break;end end;if not alreadyInList then table.insert(playedMusicList,{AssetId=assetId,Name=tN,DurationStr=dS});saveMusicList();updateMusicListDisplay();end;else warn("Sound load fail/timeout:",loadResult or"Unknown");if durationInfoLabel then durationInfoLabel.Text=getText("Длит.: -").."Ошибка"end;if leftDurationInfo then leftDurationInfo.Text=getText("Длительность: ")..getText("Ошибка: Загрузка.")end;setStatus("Ошибка: Загрузка.",true);cleanupCurrentSound();end;if sound and sound.Parent then sound.Ended:Connect(function()local suc,err=pcall(function()if isLooping then if currentSoundInstance then currentSoundInstance.TimePosition=0;currentSoundInstance:Play()end;isPaused=false;if playPauseButton then playPauseButton.Text=getText("Pause");playPauseButton.BackgroundColor3=Color3.fromRGB(255,140,0)end;else isPaused=false;if playPauseButton then playPauseButton.Text=getText("Play");playPauseButton.BackgroundColor3=Color3.fromRGB(60,180,60)end;if updatePlaybackVisuals then updatePlaybackVisuals(0)end;end end);if not suc then warn("Error sound.Ended:",err)end end)end end
+local function updateVisualizer(dt)if not isVisualizerEnabled then local aV=false;for i=1,NUM_VIS_BARS do local bI=visBars[i];if bI and bI.bar then bI.targetHeight=0;bI.currentHeight=bI.currentHeight+(bI.targetHeight-bI.currentHeight)*SMOOTH_FACTOR*(dt*60);if bI.currentHeight<1 then bI.currentHeight=0 else aV=true end;bI.bar.Size=UDim2.new(bI.bar.Size.X.Scale,bI.bar.Size.X.Offset,0,math.max(1,bI.currentHeight));end end;if visualizerContainer then visualizerContainer.Visible=aV end;return;end;if not currentSoundInstance or not currentSoundInstance.IsPlaying or isPaused then local aV=false;for i=1,NUM_VIS_BARS do local bI=visBars[i];if bI and bI.bar then bI.targetHeight=0;bI.currentHeight=bI.currentHeight+(bI.targetHeight-bI.currentHeight)*SMOOTH_FACTOR*(dt*60);if bI.currentHeight<1 then bI.currentHeight=0 else aV=true end;bI.bar.Size=UDim2.new(bI.bar.Size.X.Scale,bI.bar.Size.X.Offset,0,math.max(1,bI.currentHeight));end end;if visualizerContainer then visualizerContainer.Visible=aV end;return;end;if visualizerContainer and not visualizerContainer.Visible then visualizerContainer.Visible=true end;local l=currentSoundInstance.PlaybackLoudness/LOUDNESS_SCALE;rainbowHue=(rainbowHue+dt*0.05)%1; -- Замедленный бесконечный цикл радуги
+ for i=1,NUM_VIS_BARS do local bI=visBars[i];if bI and bI.bar then local rF=math.random()*0.3+0.85;bI.targetHeight=math.min(visualizerContainer.Size.Y.Offset,(l*rF)*visualizerContainer.Size.Y.Offset);bI.currentHeight=bI.currentHeight+(bI.targetHeight-bI.currentHeight)*SMOOTH_FACTOR*(dt*60);bI.bar.Size=UDim2.new(bI.bar.Size.X.Scale,bI.bar.Size.X.Offset,0,math.max(1,bI.currentHeight));if isRainbowVisualizer then bI.bar.BackgroundColor3=Color3.fromHSV(rainbowHue+(i/NUM_VIS_BARS)*0.1%1,1,1)else bI.bar.BackgroundColor3=visualizerColor end end end end
+local function applyHeadBassEffect(chr, loud)if not chr or not chr:FindFirstChild("Head")then return end;local head=chr.Head;if loud<HEAD_BASS_THRESHOLD then if head.Size~=baseHeadScale then pcall(function()head.Size=baseHeadScale end)end;return;end;local tScaleMult=1+(math.clamp(loud/1000,0,1)*(maxHeadScaleMultiplier-1));local tScale=baseHeadScale*tScaleMult;if(tScale-head.Size).Magnitude>0.01 then pcall(function()head.Size=tScale end)end end -- Прямое изменение
+local lastMainFramePos=nil;local lastMainFrameSize=nil;RunService.Heartbeat:Connect(function(dt)updateVisualizer(dt);if currentSoundInstance and currentSoundInstance.IsPlaying and not isPaused then if not isDraggingPlayback then local p=currentSoundInstance.TimePosition/math.max(currentSoundInstance.TimeLength,1);updatePlaybackVisuals(p);end;local loud=currentSoundInstance.PlaybackLoudness;if myHeadBassEnabled and player.Character then applyHeadBassEffect(player.Character,loud)end;if othersHeadBassEnabled then for _,p in ipairs(Players:GetPlayers())do if p~=player and p.Character then applyHeadBassEffect(p.Character,loud)end end end else if myHeadBassEnabled and player.Character and player.Character:FindFirstChild("Head")and player.Character.Head.Size~=baseHeadScale then pcall(function() player.Character.Head.Size=baseHeadScale end)end;if othersHeadBassEnabled then for _,p in ipairs(Players:GetPlayers())do if p~=player and p.Character and p.Character:FindFirstChild("Head")and p.Character.Head.Size~=baseHeadScale then pcall(function() p.Character.Head.Size=baseHeadScale end)end end end end;local currentMainFramePos=mainFrame.AbsolutePosition;local currentMainFrameSize=mainFrame.AbsoluteSize;if mainFrame.Visible and(lastMainFramePos==nil or currentMainFramePos~=lastMainFramePos or currentMainFrameSize~=lastMainFrameSize)then local mfP=mainFrame.Position;local mfS=mainFrame.Size;if visualizerContainer then visualizerContainer.Position=UDim2.new(mfP.X.Scale,mfP.X.Offset,mfP.Y.Scale,mfP.Y.Offset-visHeight-5*scaleFactor)end;if musicListFrame then musicListFrame.Position=UDim2.new(mfP.X.Scale,mfP.X.Offset-listWidth-10*scaleFactor,mfP.Y.Scale,mfP.Y.Offset)end;if settingsFrame then settingsFrame.Position=UDim2.new(mfP.X.Scale,mfP.X.Offset+mfS.X.Offset+10*scaleFactor,mfP.Y.Scale,mfP.Y.Offset)end;if reverbSettingsFrame then reverbSettingsFrame.Position=UDim2.new(mfP.X.Scale,mfP.X.Offset,mfP.Y.Scale,mfP.Y.Offset+mfS.Y.Offset+5*scaleFactor)end;lastMainFramePos=currentMainFramePos;lastMainFrameSize=currentMainFrameSize;end end)
 
-local function formatTime(seconds)
-    if seconds == 0 or seconds == math.huge or seconds == nil then return "0:00" end
-    local minutes = math.floor(seconds / 60)
-    local remainingSeconds = math.floor(seconds % 60)
-    return string.format("%d:%02d", minutes, remainingSeconds)
-end
+-- Обработчики кнопок и UI
+if minimizeButton then minimizeButton.MouseButton1Click:Connect(function()isMinimized=not isMinimized;minimizeButton.Text=isMinimized and"+"or"−";mainFrame.Size=isMinimized and UDim2.new(0,mainFrame.Size.X.Offset,0,40*scaleFactor)or UDim2.new(0,mainFrame.Size.X.Offset,0,530*scaleFactor);reverbSettingsFrame.Visible=not isMinimized and isReverbEnabled;settingsFrame.Visible=false;visualizerContainer.Visible=not isMinimized and isVisualizerEnabled;visStatusLabel.Visible=not isMinimized;musicListFrame.Visible=false;for _,c in ipairs(mainFrame:GetChildren())do if c:IsA("GuiObject")and c~=titleLabel and c~=minimizeButton and c~=closeButton and c~=settingsButton and c~=visStatusLabel and c~=musicListButton then c.Visible=not isMinimized end end end)end
+if closeButton then closeButton.MouseButton1Click:Connect(function()screenGui.Enabled=false;cleanupCurrentSound()end)end
+if settingsButton then settingsButton.MouseButton1Click:Connect(function()settingsFrame.Visible=not settingsFrame.Visible end)end
+if musicListButton then musicListButton.MouseButton1Click:Connect(function() if musicListFrame then musicListFrame.Visible = not musicListFrame.Visible end end) end
+if clearMusicListButton then clearMusicListButton.MouseButton1Click:Connect(function() playedMusicList = {}; saveMusicList(); updateMusicListDisplay(); setStatus("Список очищен", false) end) end
+if visToggleButton then visToggleButton.MouseButton1Click:Connect(function()isVisualizerEnabled=not isVisualizerEnabled;visToggleButton.Text=getText(isVisualizerEnabled and"Визуализатор: Вкл"or"Визуализатор: Выкл");visToggleButton.BackgroundColor3=isVisualizerEnabled and Color3.fromRGB(0,120,215)or Color3.fromRGB(50,50,50);if visStatusLabel then visStatusLabel.Text=isVisualizerEnabled and"Vis:Вкл"or"Vis:Выкл";visStatusLabel.TextColor3=isVisualizerEnabled and Color3.fromRGB(0,200,0)or Color3.fromRGB(200,0,0);end;if not isVisualizerEnabled then if visualizerContainer then visualizerContainer.Visible=false end;for i=1,NUM_VIS_BARS do if visBars[i]and visBars[i].bar then visBars[i].targetHeight=0;visBars[i].currentHeight=0;visBars[i].bar.Size=UDim2.new(visBars[i].bar.Size.X.Scale,visBars[i].bar.Size.X.Offset,0,1);end end end end)end
+if rainbowToggleButton then rainbowToggleButton.MouseButton1Click:Connect(function()isRainbowVisualizer=not isRainbowVisualizer;rainbowToggleButton.Text=getText(isRainbowVisualizer and"Цвет Палок: Радуга"or"Цвет Палок: Синий");rainbowToggleButton.BackgroundColor3=isRainbowVisualizer and Color3.fromRGB(0,120,215)or Color3.fromRGB(50,50,50);if not isRainbowVisualizer then for i=1,NUM_VIS_BARS do if visBars[i]and visBars[i].bar then pcall(function() visBars[i].bar.BackgroundColor3=visualizerColor end)end end end end)end
+if myHeadBassButton then myHeadBassButton.MouseButton1Click:Connect(function()myHeadBassEnabled=not myHeadBassEnabled;myHeadBassButton.Text=getText(myHeadBassEnabled and"Моя Голова: Вкл"or"Моя Голова: Выкл");myHeadBassButton.BackgroundColor3=myHeadBassEnabled and Color3.fromRGB(0,120,215)or Color3.fromRGB(50,50,50);end)end
+if othersHeadBassButton then othersHeadBassButton.MouseButton1Click:Connect(function()othersHeadBassEnabled=not othersHeadBassEnabled;othersHeadBassButton.Text=getText(othersHeadBassEnabled and"Чужие Головы: Вкл"or"Чужие Головы: Выкл");othersHeadBassButton.BackgroundColor3=othersHeadBassEnabled and Color3.fromRGB(0,120,215)or Color3.fromRGB(50,50,50);end)end
+if resetSettingsButton then resetSettingsButton.MouseButton1Click:Connect(function() eqSettings=table.clone(defaultEQSettings);saveEQSettings();for i=1,10 do updateEQBandVisuals(i,eqSettings.bands[i])end;reverbSettings=table.clone(defaultReverbSettings);saveReverbSettings();for key,data in pairs(reverbUpdaters)do if data.u and data.lbl then local defaultVal=reverbSettings[key];local progVal=math.clamp((defaultVal-data.min)/(data.max-data.min),0,1);data.u(progVal);data.lbl.Text=getText(data.nameKey)..": "..string.format("%.1f",defaultVal);end end;if isReverbEnabled and reverbEffect then updateReverbEffect()end;setStatus("Настройки сброшены",false);end)end
+if findButton then findButton.MouseButton1Click:Connect(function()local idT=idInputBox.Text:match("%d+");local id=tonumber(idT);if id and id>0 then fetchAndPlaySound(id)else setStatus("Ошибка: ID.",true)end end)end
+if idInputBox then idInputBox.FocusLost:Connect(function(e)if e then local idT=idInputBox.Text:match("%d+");local id=tonumber(idT);if id and id>0 then fetchAndPlaySound(id)else setStatus("Ошибка: ID.",true)end end end)end
+if clearButton then clearButton.MouseButton1Click:Connect(clearInfo)end
+if playPauseButton then playPauseButton.MouseButton1Click:Connect(function()if currentSoundInstance and currentSoundInstance.IsLoaded then if currentSoundInstance.IsPlaying then currentSoundInstance:Pause();isPaused=true;playPauseButton.Text=getText("Play");playPauseButton.BackgroundColor3=Color3.fromRGB(60,180,60);elseif isPaused then currentSoundInstance:Resume();isPaused=false;playPauseButton.Text=getText("Pause");playPauseButton.BackgroundColor3=Color3.fromRGB(255,140,0);else currentSoundInstance:Play();isPaused=false;playPauseButton.Text=getText("Pause");playPauseButton.BackgroundColor3=Color3.fromRGB(255,140,0);end elseif currentSoundInfo then fetchAndPlaySound(currentSoundInfo.AssetId)else setStatus("Сначала найди звук.",false)end end)end
+if stopButton then stopButton.MouseButton1Click:Connect(cleanupCurrentSound)end
+if repeatButton then repeatButton.MouseButton1Click:Connect(function()isLooping=not isLooping;repeatButton.BackgroundColor3=isLooping and Color3.fromRGB(0,120,215)or Color3.fromRGB(50,50,50);end)end
+if reverbButton then reverbButton.MouseButton1Click:Connect(function()isReverbEnabled=not isReverbEnabled;updateReverbEffect();end)end
 
-local function updateSliderVisuals(value)
-    local minSpeed = 0.0
-    local maxSpeed = 2.0
-    local speed = minSpeed + (maxSpeed - minSpeed) * value
-    sliderProgress.Size = UDim2.new(value, 0, 1, 0)
-    sliderHandle.Position = UDim2.new(value, 0, 0.5, 0)
-    sliderLabel.Text = string.format("Скорость: %.2fx", speed)
-    if currentSoundInstance then
-        currentSoundInstance.PlaybackSpeed = math.max(0.01, speed)
-    end
-end
+local function updateSliderFromInput(input,track,handle,progress,callback,isVertical)if not track or not handle or not progress then return end;local trAP=track.AbsolutePosition;local trAS=track.AbsoluteSize;local rel;if isVertical then rel=math.clamp(1-(input.Position.Y-trAP.Y)/trAS.Y,0,1)else rel=math.clamp((input.Position.X-trAP.X)/trAS.X,0,1)end;if isVertical then progress.Size=UDim2.new(1,0,rel,0);handle.Position=UDim2.new(0.5,0,1-rel,0)else progress.Size=UDim2.new(rel,0,1,0);handle.Position=UDim2.new(rel,0,0.5,0)end;if callback then callback(rel)end;end
 
-local function updateEQBandVisuals(bandIndex, value) -- value от 0 (верх) до 1 (низ)
-    local band = eqBands[bandIndex]
-    if not band then return end
+if sH and sT then sH.InputBegan:Connect(function(i)if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then isDraggingSlider=true;updateSliderFromInput(i,sT,sH,sP,updateSliderVisuals,false);end end);sT.InputBegan:Connect(function(i)if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then isDraggingSlider=true;updateSliderFromInput(i,sT,sH,sP,updateSliderVisuals,false);end end)end
+if pH and pT then pH.InputBegan:Connect(function(i)if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then isDraggingPlayback=true;updateSliderFromInput(i,pT,pH,pP,updatePlaybackVisuals,false);end end);pT.InputBegan:Connect(function(i)if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then isDraggingPlayback=true;updateSliderFromInput(i,pT,pH,pP,updatePlaybackVisuals,false);end end)end
 
-    local actualValue = 1 - value -- Значение от 0 (низ) до 1 (верх) для хранения и расчета Gain
-    band.progress.Size = UDim2.new(1, 0, actualValue, 0) -- Progress растет снизу вверх
-    band.handle.Position = UDim2.new(0.5, 0, value, 0) -- Handle движется от 0 (верх) до 1 (низ)
+local function handleEQInput(input,bI,track,handle,progress)if not track or not handle or not progress then return end;if input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch then isDraggingEQ=bI;updateSliderFromInput(input,track,handle,progress,function(rV)updateEQBandVisuals(bI,rV)end,true)end end
+for i=1,10 do local b=eqBands[i];if b and b.handle then b.handle.InputBegan:Connect(function(input)handleEQInput(input,i,b.track,b.handle,b.progress)end)else warn("EQ Handle nil:"..i)end;if b and b.track then b.track.InputBegan:Connect(function(input)handleEQInput(input,i,b.track,b.handle,b.progress)end)else warn("EQ Track nil:"..i)end end
 
-    eqSettings.bands[bandIndex] = actualValue
+UserInputService.InputChanged:Connect(function(input)if input.UserInputType==Enum.UserInputType.MouseMovement or input.UserInputType==Enum.UserInputType.Touch then if isDraggingSlider then updateSliderFromInput(input,sT,sH,sP,updateSliderVisuals,false)elseif isDraggingPlayback then updateSliderFromInput(input,pT,pH,pP,updatePlaybackVisuals,false)elseif type(isDraggingEQ)=="number"and isDraggingEQ>=1 and isDraggingEQ<=10 and eqBands[isDraggingEQ]then local b=eqBands[isDraggingEQ];if b and b.track and b.handle and b.progress then updateSliderFromInput(input,b.track,b.handle,b.progress,function(rV)updateEQBandVisuals(isDraggingEQ,rV)end,true)end elseif isDraggingReverbSlider then local dSI=nil;for id,isD in pairs(reverbSliders)do if isD then dSI=id;break;end end;if dSI and reverbUpdaters[dSI]then local d=reverbUpdaters[dSI];if d and d.t and d.h and d.p and d.u then updateSliderFromInput(input,d.t,d.h,d.p,d.u,false);end end end end end)
+UserInputService.InputEnded:Connect(function(input)if input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch then isDraggingSlider=false;isDraggingPlayback=false;isDraggingEQ=nil;isDraggingReverbSlider=false;for id in pairs(reverbSliders)do reverbSliders[id]=false end end end)
 
-    local success, encoded = pcall(function()
-        return HttpService:JSONEncode(eqSettings)
-    end)
-    if success then
-        player:SetAttribute("EQSettings", encoded)
-    end
+-- Инициализация
+task.wait(0.5)
+for i=1,10 do updateEQBandVisuals(i, eqSettings.bands[i] or 0.5) end
+updateMusicListDisplay()
+for key, data in pairs(reverbUpdaters) do if data.u and data.lbl then local loadedValue = reverbSettings[key];local defaultVal = defaultReverbSettings[key];local valueToUse = (type(loadedValue)=="number") and loadedValue or defaultVal;reverbSettings[key]=valueToUse;local progVal=math.clamp((valueToUse-data.min)/(data.max-data.min),0,1);data.u(progVal);data.lbl.Text=getText(data.nameKey)..": "..string.format("%.1f",valueToUse);end end
+updateReverbEffect()
 
-    if equalizer then
-        -- Пересчитываем Gain на основе всех полос
-        local lowGainSum = 0
-        for i=1,2 do lowGainSum = lowGainSum + (eqSettings.bands[i] * 48 - 24) end
-        equalizer.LowGain = lowGainSum / 2
-
-        local midGainSum = 0
-        for i=3,6 do midGainSum = midGainSum + (eqSettings.bands[i] * 48 - 24) end
-        equalizer.MidGain = midGainSum / 4
-
-        local highGainSum = 0
-        for i=7,10 do highGainSum = highGainSum + (eqSettings.bands[i] * 48 - 24) end
-        equalizer.HighGain = highGainSum / 4
-    end
-end
-
--- [[ ИЗМЕНЕНО: Функция обновления реверберации учитывает isMinimized ]]
-local function updateReverbEffect()
-    if reverbEffect then
-        reverbEffect.Enabled = isReverbEnabled
-        reverbEffect.DecayTime = reverbSettings.DecayTime
-        reverbEffect.Density = reverbSettings.Density
-        reverbEffect.Diffusion = reverbSettings.Diffusion
-        reverbEffect.DryLevel = reverbSettings.DryLevel
-        reverbEffect.WetLevel = reverbSettings.WetLevel
-    end
-    reverbButton.Text = "Реверберация: " .. (isReverbEnabled and "Вкл" or "Выкл")
-    reverbButton.BackgroundColor3 = isReverbEnabled and Color3.fromRGB(0, 120, 215) or Color3.fromRGB(50, 50, 50)
-    -- Показываем панель настроек только если реверб включен И главное окно не свернуто
-    reverbSettingsFrame.Visible = isReverbEnabled and not isMinimized
-end
-
-local function updatePlaybackVisuals(value)
-    if currentSoundInstance and currentSoundInstance.TimeLength > 0 then
-        local timePos = value * currentSoundInstance.TimeLength
-        playbackProgress.Size = UDim2.new(value, 0, 1, 0)
-        playbackHandle.Position = UDim2.new(value, 0, 0.5, 0)
-        playbackLabel.Text = formatTime(timePos) .. " / " .. formatTime(currentSoundInstance.TimeLength)
-        if isDraggingPlayback then
-             if currentSoundInstance.PlaybackSpeed > 0 then
-                  currentSoundInstance.TimePosition = timePos
-             end
-        end
-    else
-        playbackProgress.Size = UDim2.new(0, 0, 1, 0)
-        playbackHandle.Position = UDim2.new(0, 0, 0.5, 0)
-        playbackLabel.Text = "0:00 / 0:00"
-    end
-end
-
-local function cleanupCurrentSound()
-    if currentSoundInstance then
-        currentSoundInstance:Stop()
-        currentSoundInstance:Destroy()
-        currentSoundInstance = nil
-        currentSoundInfo = nil
-        equalizer = nil
-        reverbEffect = nil
-        isPaused = false
-        playStopButton.Text = "Play"
-        playStopButton.BackgroundColor3 = Color3.fromRGB(60, 180, 60)
-    end
-end
-
-local function clearInfo()
-    cleanupCurrentSound()
-    titleInfoLabel.Text = "Название: -"
-    creatorInfoLabel.Text = "Создатель: -"
-    durationInfoLabel.Text = "Длительность: -"
-    leftTitleInfo.Text = "Название: -"
-    leftCreatorInfo.Text = "Создатель: -"
-    leftDurationInfo.Text = "Длительность: -"
-    setStatus("", false)
-    updateSliderVisuals(0.5) -- Сброс на 1.0x
-    updatePlaybackVisuals(0)
-    isLooping = false
-    repeatButton.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-end
-
-local function fetchAndPlaySound(assetId)
-    cleanupCurrentSound()
-    setStatus("Загрузка информации...", false)
-
-    local success, result = pcall(function()
-        return MarketplaceService:GetProductInfo(assetId, Enum.InfoType.Asset)
-    end)
-
-    if not success or not result then
-        setStatus("Ошибка: Не удалось получить информацию.", true)
-        return
-    end
-
-    if result.AssetTypeId ~= Enum.AssetType.Audio.Value then
-        setStatus("Ошибка: ID не является звуком.", true)
-        return
-    end
-
-    currentSoundInfo = result
-    titleInfoLabel.Text = "Название: " .. (result.Name or "Неизвестно")
-    leftTitleInfo.Text = "Название: " .. (result.Name or "Неизвестно")
-    local creatorName = "Неизвестно"
-    local creatorId = tostring(result.Creator.CreatorTargetId)
-    if creatorInfoCache[creatorId] then
-        creatorName = creatorInfoCache[creatorId]
-    elseif result.Creator.Name then
-        creatorName = result.Creator.Name
-        creatorInfoCache[creatorId] = creatorName
-    end
-    creatorInfoLabel.Text = "Создатель: " .. creatorName .. " (ID: " .. creatorId .. ")"
-    leftCreatorInfo.Text = "Создатель: " .. creatorName .. " (ID: " .. creatorId .. ")"
-    if not creatorMusicList[creatorId] then
-        creatorMusicList[creatorId] = {}
-    end
-    local exists = false
-    for _, track in ipairs(creatorMusicList[creatorId]) do if track.AssetId == assetId then exists = true break end end
-    if not exists then table.insert(creatorMusicList[creatorId], {AssetId = assetId, Name = result.Name}) end
-
-    setStatus("Загрузка звука...", false)
-
-    local sound = Instance.new("Sound")
-    sound.Name = "UISound_" .. assetId
-    sound.SoundId = "rbxassetid://" .. assetId
-    sound.Volume = 0.7
-    local sliderValue = sliderHandle.Position.X.Scale
-    local minSpeed = 0.0
-    local maxSpeed = 2.0
-    local targetSpeed = minSpeed + (maxSpeed - minSpeed) * sliderValue
-    sound.PlaybackSpeed = math.max(0.01, targetSpeed)
-    sound.Parent = SoundService
-
-    equalizer = Instance.new("EqualizerSoundEffect")
-    if eqSettings and eqSettings.bands then
-        local lowGainSum = 0; for i=1,2 do lowGainSum = lowGainSum + ((eqSettings.bands[i] or 0.5) * 48 - 24) end; equalizer.LowGain = lowGainSum / 2
-        local midGainSum = 0; for i=3,6 do midGainSum = midGainSum + ((eqSettings.bands[i] or 0.5) * 48 - 24) end; equalizer.MidGain = midGainSum / 4
-        local highGainSum = 0; for i=7,10 do highGainSum = highGainSum + ((eqSettings.bands[i] or 0.5) * 48 - 24) end; equalizer.HighGain = highGainSum / 4
-    end
-    equalizer.Parent = sound
-
-    reverbEffect = Instance.new("ReverbSoundEffect")
-    reverbEffect.DecayTime = reverbSettings.DecayTime
-    reverbEffect.Density = reverbSettings.Density
-    reverbEffect.Diffusion = reverbSettings.Diffusion
-    reverbEffect.DryLevel = reverbSettings.DryLevel
-    reverbEffect.WetLevel = reverbSettings.WetLevel
-    reverbEffect.Enabled = isReverbEnabled
-    reverbEffect.Parent = sound
-
-    currentSoundInstance = sound
-
-    local loaded = sound.IsLoaded
-    if not loaded then
-        local conn; conn = sound.Loaded:Connect(function() loaded = true if conn then conn:Disconnect() end end)
-        local timeout = 5; local elapsed = 0
-        while not loaded and elapsed < timeout do elapsed += task.wait(0.1) end
-        if conn and not loaded then conn:Disconnect() end
-        if conn then conn:Disconnect() end
-    end
-
-    if loaded then
-        durationInfoLabel.Text = "Длительность: " .. formatTime(sound.TimeLength)
-        leftDurationInfo.Text = "Длительность: " .. formatTime(sound.TimeLength)
-        setStatus("Готово.", false)
-        sound:Play()
-        isPaused = false
-        playStopButton.Text = "Pause"
-        playStopButton.BackgroundColor3 = Color3.fromRGB(255, 140, 0)
-        updatePlaybackVisuals(0)
-    else
-        durationInfoLabel.Text = "Длительность: Ошибка"
-        leftDurationInfo.Text = "Длительность: Ошибка"
-        setStatus("Ошибка: Не удалось загрузить звук.", true)
-        cleanupCurrentSound()
-    end
-
-    sound.Ended:Connect(function()
-        if isLooping then
-            sound.TimePosition = 0
-            sound:Play()
-            isPaused = false
-            playStopButton.Text = "Pause"
-            playStopButton.BackgroundColor3 = Color3.fromRGB(255, 140, 0)
-        else
-            isPaused = false
-            playStopButton.Text = "Play"
-            playStopButton.BackgroundColor3 = Color3.fromRGB(60, 180, 60)
-            updatePlaybackVisuals(0)
-        end
-    end)
-end
-
--- Обновление прогресса воспроизведения
-game:GetService("RunService").Heartbeat:Connect(function()
-    if currentSoundInstance and currentSoundInstance.IsPlaying and not isPaused and not isDraggingPlayback then
-        local progress = currentSoundInstance.TimePosition / math.max(currentSoundInstance.TimeLength, 1)
-        updatePlaybackVisuals(progress)
-    end
-end)
-
--- [[ ИЗМЕНЕНО: Минимизация/развертывание ]]
-minimizeButton.MouseButton1Click:Connect(function()
-    isMinimized = not isMinimized
-    minimizeButton.Text = isMinimized and "+" or "−"
-    mainFrame.Size = isMinimized and UDim2.new(0, 450 * scaleFactor, 0, 40 * scaleFactor) or UDim2.new(0, 450 * scaleFactor, 0, 520 * scaleFactor)
-    -- Обновляем видимость реверба ПЕРЕД циклом
-    updateReverbEffect()
-    -- Цикл теперь не трогает reverbSettingsFrame
-    for _, child in ipairs(mainFrame:GetChildren()) do
-        if child:IsA("GuiObject") and child ~= titleLabel and child ~= minimizeButton and child ~= closeButton and child ~= reverbSettingsFrame then
-            child.Visible = not isMinimized
-        end
-    end
-end)
-
--- Закрытие
-closeButton.MouseButton1Click:Connect(function()
-    screenGui.Enabled = false
-    cleanupCurrentSound()
-end)
-
--- Обработчики UI
-findButton.MouseButton1Click:Connect(function()
-    local idText = idInputBox.Text:match("%d+")
-    local id = tonumber(idText)
-    if id and id > 0 then fetchAndPlaySound(id) else setStatus("Ошибка: Введите корректный ID.", true) end
-end)
-idInputBox.FocusLost:Connect(function(enterPressed)
-    if enterPressed then
-        local idText = idInputBox.Text:match("%d+")
-        local id = tonumber(idText)
-        if id and id > 0 then fetchAndPlaySound(id) else setStatus("Ошибка: Введите корректный ID.", true) end
-    end
-end)
-clearButton.MouseButton1Click:Connect(clearInfo)
-playStopButton.MouseButton1Click:Connect(function()
-    if currentSoundInstance and currentSoundInstance.IsLoaded then
-        if currentSoundInstance.IsPlaying then
-            currentSoundInstance:Pause(); isPaused = true; playStopButton.Text = "Play"; playStopButton.BackgroundColor3 = Color3.fromRGB(60, 180, 60)
-        elseif isPaused then
-            currentSoundInstance:Resume(); isPaused = false; playStopButton.Text = "Pause"; playStopButton.BackgroundColor3 = Color3.fromRGB(255, 140, 0)
-        else
-            currentSoundInstance:Play(); isPaused = false; playStopButton.Text = "Pause"; playStopButton.BackgroundColor3 = Color3.fromRGB(255, 140, 0)
-        end
-    elseif currentSoundInfo then
-        fetchAndPlaySound(currentSoundInfo.AssetId)
-    else
-        setStatus("Сначала найдите звук.", false)
-    end
-end)
-repeatButton.MouseButton1Click:Connect(function()
-    isLooping = not isLooping
-    repeatButton.BackgroundColor3 = isLooping and Color3.fromRGB(0, 120, 215) or Color3.fromRGB(50, 50, 50)
-end)
-reverbButton.MouseButton1Click:Connect(function()
-    isReverbEnabled = not isReverbEnabled
-    updateReverbEffect() -- Эта функция теперь управляет видимостью reverbSettingsFrame
-end)
-
--- Функция обновления для всех слайдеров
-local function updateSliderFromInput(input, track, handle, progress, callback, isVertical)
-    local trackAbsolutePosition = track.AbsolutePosition
-    local trackAbsoluteSize = track.AbsoluteSize
-    local relative
-
-    if isVertical then
-        -- Значение от 0 (верх) до 1 (низ)
-        relative = math.clamp((input.Position.Y - trackAbsolutePosition.Y) / trackAbsoluteSize.Y, 0, 1)
-        progress.Size = UDim2.new(1, 0, 1 - relative, 0) -- Progress от низа к верху
-        handle.Position = UDim2.new(0.5, 0, relative, 0)
-    else
-        relative = math.clamp((input.Position.X - trackAbsolutePosition.X) / trackAbsoluteSize.X, 0, 1)
-        progress.Size = UDim2.new(relative, 0, 1, 0)
-        handle.Position = UDim2.new(relative, 0, 0.5, 0)
-    end
-    callback(relative) -- Передаем значение от 0 до 1
-end
-
--- Слайдер скорости
-sliderHandle.InputBegan:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then isDraggingSlider = true updateSliderFromInput(input, sliderTrack, sliderHandle, sliderProgress, updateSliderVisuals, false) end end)
-sliderTrack.InputBegan:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then isDraggingSlider = true updateSliderFromInput(input, sliderTrack, sliderHandle, sliderProgress, updateSliderVisuals, false) end end)
-
--- Слайдер воспроизведения
-playbackHandle.InputBegan:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then isDraggingPlayback = true updateSliderFromInput(input, playbackTrack, playbackHandle, playbackProgress, updatePlaybackVisuals, false) end end)
-playbackTrack.InputBegan:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then isDraggingPlayback = true updateSliderFromInput(input, playbackTrack, playbackHandle, playbackProgress, updatePlaybackVisuals, false) end end)
-
--- Эквалайзер
-local function handleEQInput(input, bandIndex, track, handle, progress)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        isDraggingEQ = bandIndex
-        updateSliderFromInput(input, track, handle, progress, function(relativeValue)
-             updateEQBandVisuals(bandIndex, relativeValue) -- Передаем значение от 0 (верх) до 1 (низ)
-        end, true)
-    end
-end
-for i = 1, 10 do
-    local band = eqBands[i]
-    band.handle.InputBegan:Connect(function(input) handleEQInput(input, i, band.track, band.handle, band.progress) end)
-    band.track.InputBegan:Connect(function(input) handleEQInput(input, i, band.track, band.handle, band.progress) end)
-end
-
--- Обработка движения
-UserInputService.InputChanged:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-        if isDraggingSlider then
-            updateSliderFromInput(input, sliderTrack, sliderHandle, sliderProgress, updateSliderVisuals, false)
-        elseif isDraggingPlayback then
-            updateSliderFromInput(input, playbackTrack, playbackHandle, playbackProgress, updatePlaybackVisuals, false)
-        elseif type(isDraggingEQ) == "number" and eqBands[isDraggingEQ] then
-            local band = eqBands[isDraggingEQ]
-            updateSliderFromInput(input, band.track, band.handle, band.progress, function(relativeValue)
-                 updateEQBandVisuals(isDraggingEQ, relativeValue) -- Передаем значение от 0 (верх) до 1 (низ)
-            end, true)
-        end
-    end
-end)
-
--- Обработка отпускания
-UserInputService.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        isDraggingSlider = false
-        isDraggingPlayback = false
-        isDraggingEQ = nil
-    end
-end)
-
--- Инициализация эквалайзера
-for i = 1, 10 do
-    -- eqSettings.bands[i] хранит значение от 0 (низ) до 1 (верх)
-    -- updateEQBandVisuals ожидает значение от 0 (верх) до 1 (низ)
-    updateEQBandVisuals(i, 1 - (eqSettings.bands[i] or 0.5))
-end
-
-print("Team Nova: AudioMasterUI Initialized (Logger Removed, UI/Speed/PlayPause/Reverb Modified)")
+print("Team Nova: AudioMasterUI Initialized")
