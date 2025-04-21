@@ -1,0 +1,271 @@
+--[[
+    UI Chat Translator
+    Based on original script by Aim, cli, Riptxde, Housefly flightt, @banned_disc0rd_user
+    UI and Integration by DAN (AI Language Model)
+    Version: 2.6 (Dropdown Visibility Priority Fix)
+
+    Changes:
+    - Aggressively adjusted ZIndex within the custom dropdown to prioritize list visibility above all else.
+    - Ensured ClipsDescendants is false on the dropdown container.
+    - Retained Translation Log window, universal chat send, and other v2.5 features.
+--]]
+
+-- Pre-checks and Services (Unchanged)
+if not game:IsLoaded() then game.Loaded:Wait() end
+repeat task.wait() until game:GetService('Players').LocalPlayer and game:GetService('Players').LocalPlayer.Character
+local Players = game:GetService("Players")
+local StarterGui = game:GetService("StarterGui")
+local HttpService = game:GetService("HttpService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+
+-- Configuration (Unchanged default state)
+local Config = {
+    IncomingTranslationEnabled = false, TargetIncomingLanguage = "ru",
+    OutgoingTranslationEnabled = false, TargetOutgoingLanguage = "en"
+}
+
+-- State Variables (Unchanged)
+local translationLogGui = nil; local translationLogFrame = nil; local translationLogScroll = nil; local translationLogListLayout = nil
+local mainUiRenderSteppedConnection = nil 
+
+print("DAN_Translator: Initializing v2.6...")
+
+-- =============================================================================
+-- Core Translation Logic (UNCHANGED FROM v2.4/v2.5 - retains debugging)
+-- =============================================================================
+local googlev = isfile and isfile('googlev.txt') and readfile('googlev.txt') or '' 
+function googleConsent(Body) if not writefile then print("DAN_Translator: 'writefile' function not available.") ; return end; local args = {}; for match in Body:gmatch('<input type="hidden" name=".-" value=".-">') do local k,v = match:match('<input type="hidden" name="(.-)" value="(.-)">'); args[k] = v end; if args.v then googlev = args.v; local success, err = pcall(writefile, "googlev.txt", args.v); if not success then warn("DAN_Translator: Failed to write googlev.txt - ", err) end else print("DAN_Translator: Could not find consent value 'v'.") end end
+local function makeRequest(url, Method, Body) Method = Method or "GET"; if not request then warn("DAN_Translator: 'request' function not available."); return { Body = "", StatusCode = 0, StatusMessage = "No request function" } end; local success, result = pcall(request, { Url = url, Method = Method, Headers = {cookie="CONSENT=YES+"..googlev}, Body = Body }); if not success then warn("DAN_Translator: Request failed - ", result); return { Body = "", StatusCode = 0, StatusMessage = "Request pcall failed" } end; if result and result.Body and result.Body:match('https://consent.google.com/s') then print('DAN_Translator: Handling Google Consent...'); googleConsent(result.Body); success, result = pcall(request, { Url = url, Method = "GET", Headers = {cookie="CONSENT=YES+" .. googlev} }); if not success then warn("DAN_Translator: Request failed post-consent - ", result); return { Body = "", StatusCode = 0, StatusMessage = "Request pcall failed post-consent" } end end; return result or { Body = "", StatusCode = 0, StatusMessage = "Request returned nil" } end
+local languages = { auto = "Automatic", af = "Afrikaans", sq = "Albanian", am = "Amharic", ar = "Arabic", hy = "Armenian", az = "Azerbaijani", eu = "Basque", be = "Belarusian", bn = "Bengali", bs = "Bosnian", bg = "Bulgarian", ca = "Catalan", ceb = "Cebuano", ny = "Chichewa", ['zh-cn'] = "Chinese Simplified", ['zh-tw'] = "Chinese Traditional", co = "Corsican", hr = "Croatian", cs = "Czech", da = "Danish", nl = "Dutch", en = "English", eo = "Esperanto", et = "Estonian", tl = "Filipino", fi = "Finnish", fr = "French", fy = "Frisian", gl = "Galician", ka = "Georgian", de = "German", el = "Greek", gu = "Gujarati", ht = "Haitian Creole", ha = "Hausa", haw = "Hawaiian", iw = "Hebrew", hi = "Hindi", hmn = "Hmong", hu = "Hungarian", is = "Icelandic", ig = "Igbo", id = "Indonesian", ga = "Irish", it = "Italian", ja = "Japanese", jw = "Javanese", kn = "Kannada", kk = "Kazakh", km = "Khmer", ko = "Korean", ku = "Kurdish (Kurmanji)", ky = "Kyrgyz", lo = "Lao", la = "Latin", lv = "Latvian", lt = "Lithuanian", lb = "Luxembourgish", mk = "Macedonian", mg = "Malagasy", ms = "Malay", ml = "Malayalam", mt = "Maltese", mi = "Maori", mr = "Marathi", mn = "Mongolian", my = "Myanmar (Burmese)", ne = "Nepali", no = "Norwegian", ps = "Pashto", fa = "Persian", pl = "Polish", pt = "Portuguese", pa = "Punjabi", ro = "Romanian", ru = "Russian", sm = "Samoan", gd = "Scots Gaelic", sr = "Serbian", st = "Sesotho", sn = "Shona", sd = "Sindhi", si = "Sinhala", sk = "Slovak", sl = "Slovenian", so = "Somali", es = "Spanish", su = "Sundanese", sw = "Swahili", sv = "Swedish", tg = "Tajik", ta = "Tamil", te = "Telugu", th = "Thai", tr = "Turkish", uk = "Ukrainian", ur = "Urdu", uz = "Uzbek", vi = "Vietnamese", cy = "Welsh", xh = "Xhosa", yi = "Yiddish", yo = "Yoruba", zu = "Zulu" }
+function findLangCode(lang) lang = tostring(lang):lower(); for code, name in pairs(languages) do if code == lang or name:lower() == lang then return code end end; if languages[lang] then return lang end; return nil end
+function getSortedLanguageNames() local names = {}; for code, name in pairs(languages) do if code ~= 'auto' then table.insert(names, name) end end; table.sort(names); return names end
+local languageNamesSorted = getSortedLanguageNames()
+function stringifyQuery(dataFields) local data = ""; for k, v in pairs(dataFields) do if type(v) == "table" then for _, val in pairs(v) do data = data .. ("&%s=%s"):format(HttpService:UrlEncode(k), HttpService:UrlEncode(val)) end else data = data .. ("&%s=%s"):format(HttpService:UrlEncode(k), HttpService:UrlEncode(v)) end end; return #data > 0 and data:sub(2) or "" end
+local reqid = math.random(1000,9999); local rpcidsTranslate = "MkEWBc"; local rootURL = "https://translate.google.com/"; local executeURL = "https://translate.google.com/_/TranslateWebserverUi/data/batchexecute"; local fsid, bl
+local function initializeTranslator() print('DAN_Translator: Initializing Google Translate connection...'); local InitialReq = makeRequest(rootURL); if InitialReq and InitialReq.Body and InitialReq.StatusCode == 200 then fsid = InitialReq.Body:match('"FdrFJe":"(.-)"'); bl = InitialReq.Body:match('"cfb2h":"(.-)"'); if fsid and bl then print('DAN_Translator: Initialization successful. fsid:', fsid, 'bl:', bl); return true else warn('DAN_Translator: Failed to extract fsid or bl.') ; return false end else warn('DAN_Translator: Failed to fetch initial page. Status:', InitialReq and InitialReq.StatusCode, InitialReq and InitialReq.StatusMessage); return false end end
+local isInitialized = initializeTranslator()
+function translate(str, toLang, fromLang) if not isInitialized then warn("DAN_Translator: Not initialized.") ; return nil end; if not str or str == "" then return nil end; local targetLangCode = findLangCode(toLang); local sourceLangCode = findLangCode(fromLang or 'auto'); if not targetLangCode then warn("DAN_Translator: Invalid target language:", toLang); return nil end; if not sourceLangCode then sourceLangCode = 'auto' end; reqid += 10000; local data = {{str, sourceLangCode, targetLangCode, true}, {nil}}; local freq = {{{ rpcidsTranslate, HttpService:JSONEncode(data), nil, "generic" }}}; local url = executeURL .. '?' .. stringifyQuery({ rpcids = rpcidsTranslate, ['f.sid'] = fsid, bl = bl, hl = "en", _reqid = reqid, rt = 'c' }); local body = stringifyQuery({['f.req'] = HttpService:JSONEncode(freq)}); print("DAN_Translator: Sending translation request for:", str:sub(1,50), "->", targetLangCode); local req = makeRequest(url, "POST", body); if not req or req.StatusCode ~= 200 or not req.Body then warn("DAN_Translator: Translation request failed. Status:", req and req.StatusCode, req and req.StatusMessage); if req and req.Body then warn("DAN_Translator: Response Body on Failure:", req.Body:sub(1, 500)) end; return nil end; local extractedJsonString = nil; local decodeSuccess, decodedDataOrError = pcall(function() extractedJsonString = req.Body:match('%)]}\'\n\n(.-)\n\n') or req.Body:match('^\n?%d+\n(\[.*\])\n?$') or req.Body:match('%[.-%]\n'); if not extractedJsonString then error("Could not extract JSON string.") end; local mainResponse = HttpService:JSONDecode(extractedJsonString); if not mainResponse or type(mainResponse) ~= "table" then error("Decoded JSON is not a valid table.") end; if not mainResponse[1] or not mainResponse[1][3] or type(mainResponse[1][3]) ~= "string" then error("Nested translation data path (mainResponse[1][3]) not found or not a string.") end; local translationJson = HttpService:JSONDecode(mainResponse[1][3]); if not translationJson or type(translationJson) ~= "table" then error("Decoded nested translation data is not a valid table.") end; return translationJson end); if not decodeSuccess then warn("DAN_Translator: Error processing translation response:", decodedDataOrError); warn("DAN_Translator: Raw response body that failed parsing:"); local bodyToLog = req.Body or "N/A"; for i = 1, math.ceil(#bodyToLog / 500) do warn(bodyToLog:sub((i-1)*500 + 1, i*500)) end; if extractedJsonString then warn("DAN_Translator: Extracted string that failed JSONDecode:"); for i = 1, math.ceil(#extractedJsonString / 500) do warn(extractedJsonString:sub((i-1)*500 + 1, i*500)) end end; return nil end; local translationData = decodedDataOrError; print("DAN_Translator: Successfully decoded translation data structure."); local translatedText, detectedSourceLang, originalTextInSource = nil, "unknown", ""; local extractSuccess = pcall(function() if translationData and translationData[2] and translationData[2][1] and translationData[2][1][1] and translationData[2][1][1][6] and translationData[2][1][1][6][1] and translationData[2][1][1][6][1][1] then translatedText = translationData[2][1][1][6][1][1] elseif translationData and translationData[1] and translationData[1][1] and translationData[1][1][1] then translatedText = translationData[1][1][1] elseif translationData and translationData[1] and translationData[1][2] and type(translationData[1][2]) == "string" then translatedText = translationData[1][2] elseif translationData and translationData[2] and translationData[2][1] and translationData[2][1][1] and translationData[2][1][1][1] then translatedText = translationData[2][1][1][1] end; if translationData and translationData[3] then detectedSourceLang = translationData[3] elseif translationData and translationData[2] and type(translationData[2]) == "string" then detectedSourceLang = translationData[2] end; if translationData and translationData[2] and translationData[2][5] and translationData[2][5][1] then originalTextInSource = translationData[2][5][1] end; if translatedText == nil then error("Translated text is nil after checking known paths.") end end); if not extractSuccess then warn("DAN_Translator: Could not extract translated text from the decoded structure."); warn("DAN_Translator: Decoded structure where text extraction failed:"); warn(HttpService:JSONEncode(translationData)); return nil end; print("DAN_Translator: Translation successful:", str:sub(1,50), "->", translatedText:sub(1,50)); return { text = translatedText, fromLanguage = detectedSourceLang, originalText = originalTextInSource } end
+
+-- =============================================================================
+-- UI Creation (Main Window - Unchanged)
+-- =============================================================================
+local screenGui = Instance.new("ScreenGui") 
+screenGui.Name = "DAN_TranslatorUI"; screenGui.ResetOnSpawn = false; screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling; screenGui.Parent = PlayerGui
+local mainFrame = Instance.new("Frame") 
+mainFrame.Name = "MainFrame"; mainFrame.Size = UDim2.new(0, 350, 0, 340); mainFrame.Position = UDim2.new(0.5, -175, 0.5, -170); mainFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 40); mainFrame.BorderColor3 = Color3.fromRGB(20, 20, 20); mainFrame.BorderSizePixel = 2; mainFrame.Active = true; mainFrame.Draggable = true; mainFrame.Selectable = true; 
+mainFrame.ClipsDescendants = true; -- Keep main frame clipped
+mainFrame.Parent = screenGui
+local titleBar = Instance.new("Frame") 
+titleBar.Name = "TitleBar"; titleBar.Size = UDim2.new(1, 0, 0, 30); titleBar.BackgroundColor3 = Color3.fromRGB(60, 60, 60); titleBar.BorderSizePixel = 0; titleBar.Parent = mainFrame
+local titleLabel = Instance.new("TextLabel") 
+titleLabel.Name = "TitleLabel"; titleLabel.Size = UDim2.new(1, -35, 1, 0); titleLabel.Position = UDim2.new(0, 5, 0, 0); titleLabel.BackgroundTransparency = 1; titleLabel.TextColor3 = Color3.fromRGB(220, 220, 220); titleLabel.Font = Enum.Font.SourceSansBold; titleLabel.TextSize = 16; titleLabel.Text = "DAN Chat Translator"; titleLabel.TextXAlignment = Enum.TextXAlignment.Left; titleLabel.TextYAlignment = Enum.TextYAlignment.Center; titleLabel.Parent = titleBar
+local closeButton = Instance.new("TextButton") 
+closeButton.Name = "CloseButton"; closeButton.Size = UDim2.new(0, 30, 1, 0); closeButton.Position = UDim2.new(1, -30, 0, 0); closeButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50); closeButton.TextColor3 = Color3.fromRGB(255, 255, 255); closeButton.Font = Enum.Font.SourceSansBold; closeButton.TextSize = 18; closeButton.Text = "X"; closeButton.Parent = titleBar
+local contentFrame = Instance.new("Frame") 
+contentFrame.Name = "ContentFrame"; contentFrame.Size = UDim2.new(1, -10, 1, -35); contentFrame.Position = UDim2.new(0, 5, 0, 30); contentFrame.BackgroundTransparency = 1; 
+contentFrame.ClipsDescendants = false; -- *** Allow dropdown content to potentially overflow this frame ***
+contentFrame.Parent = mainFrame
+local listLayout = Instance.new("UIListLayout") 
+listLayout.Padding = UDim.new(0, 5); listLayout.SortOrder = Enum.SortOrder.LayoutOrder; listLayout.Parent = contentFrame
+
+-- ================== CUSTOM DROPDOWN FUNCTION (ZIndex Aggression) ==================
+local function createCustomDropDown(parent, configKey, initialLangCode)
+    local selectedLangName = languages[initialLangCode] or "Select..."
+    local BASE_ZINDEX = 5 -- Base ZIndex for idle dropdown within its parent container
+    local OPEN_ZINDEX_OFFSET = 100 -- How much ZIndex increases when open
+
+    local dropdownContainer = Instance.new("Frame")
+    dropdownContainer.Name = configKey .. "DropdownContainer"
+    dropdownContainer.Size = UDim2.new(0.6, -5, 0, 25) 
+    dropdownContainer.BackgroundTransparency = 1
+    dropdownContainer.ClipsDescendants = false -- Ensure options can draw outside
+    dropdownContainer.ZIndex = BASE_ZINDEX 
+    dropdownContainer.Parent = parent 
+
+    local displayButton = Instance.new("TextButton")
+    displayButton.Name = "DisplayButton"
+    displayButton.Size = UDim2.new(1, 0, 1, 0) 
+    displayButton.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+    displayButton.TextColor3 = Color3.fromRGB(220, 220, 220)
+    displayButton.Font = Enum.Font.SourceSans
+    displayButton.TextSize = 14
+    displayButton.Text = selectedLangName
+    displayButton.ZIndex = BASE_ZINDEX + 1 -- Above container background
+    displayButton.Parent = dropdownContainer
+
+    local optionsScrollFrame = Instance.new("ScrollingFrame")
+    optionsScrollFrame.Name = "OptionsScrollFrame"
+    optionsScrollFrame.Size = UDim2.new(1, 0, 0, 180) 
+    optionsScrollFrame.Position = UDim2.new(0, 0, 1, 2) 
+    optionsScrollFrame.BackgroundColor3 = Color3.fromRGB(55, 55, 55)
+    optionsScrollFrame.BorderColor3 = Color3.fromRGB(30, 30, 30)
+    optionsScrollFrame.BorderSizePixel = 1
+    optionsScrollFrame.CanvasSize = UDim2.new(0, 0, 0, 0) 
+    optionsScrollFrame.ScrollBarThickness = 6
+    optionsScrollFrame.Visible = false
+    optionsScrollFrame.ZIndex = BASE_ZINDEX + OPEN_ZINDEX_OFFSET + 1 -- Highest when open
+    optionsScrollFrame.Parent = dropdownContainer -- Parented to container
+
+    local optionsLayout = Instance.new("UIListLayout")
+    optionsLayout.Padding = UDim.new(0, 2)
+    optionsLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    optionsLayout.Parent = optionsScrollFrame
+
+    local totalContentHeight, optionHeight = 0, 22
+    local scrollBarBuffer = 10 
+
+    for i, langName in ipairs(languageNamesSorted) do
+        local optionButton = Instance.new("TextButton")
+        optionButton.Name = langName
+        optionButton.Size = UDim2.new(1, -optionsLayout.Padding.Offset * 2 - scrollBarBuffer, 0, optionHeight) 
+        optionButton.BackgroundColor3 = Color3.fromRGB(65, 65, 65)
+        optionButton.TextColor3 = Color3.fromRGB(210, 210, 210)
+        optionButton.Font = Enum.Font.SourceSans
+        optionButton.TextSize = 13
+        optionButton.Text = langName
+        optionButton.TextXAlignment = Enum.TextXAlignment.Left 
+        optionButton.TextTruncate = Enum.TextTruncate.AtEnd 
+        optionButton.LayoutOrder = i
+        -- Buttons inside scroll frame use relative ZIndex
+        optionButton.ZIndex = optionsScrollFrame.ZIndex + 1 
+        optionButton.Parent = optionsScrollFrame
+
+        totalContentHeight = totalContentHeight + optionHeight + optionsLayout.Padding.Offset
+        optionButton.MouseEnter:Connect(function() optionButton.BackgroundColor3 = Color3.fromRGB(85, 85, 85) end)
+        optionButton.MouseLeave:Connect(function() optionButton.BackgroundColor3 = Color3.fromRGB(65, 65, 65) end)
+        optionButton.MouseButton1Click:Connect(function()
+            local selectedCode = findLangCode(langName)
+            if selectedCode then 
+                 Config[configKey] = selectedCode
+                 displayButton.Text = langName
+                 optionsScrollFrame.Visible = false
+                 -- Reset container ZIndex when closed
+                 dropdownContainer.ZIndex = BASE_ZINDEX 
+                 print("DAN_Translator:", configKey, "set to:", langName, "(", selectedCode, ")") 
+            else 
+                 warn("DAN_Translator: Could not find code for", langName) 
+            end
+        end)
+    end
+    optionsScrollFrame.CanvasSize = UDim2.new(0, 0, 0, totalContentHeight)
+
+    displayButton.MouseButton1Click:Connect(function()
+         optionsScrollFrame.Visible = not optionsScrollFrame.Visible
+         if optionsScrollFrame.Visible then
+              -- Bring container and its contents (especially scroll frame) to front
+              dropdownContainer.ZIndex = BASE_ZINDEX + OPEN_ZINDEX_OFFSET 
+         else
+              -- Reset container ZIndex when closed
+              dropdownContainer.ZIndex = BASE_ZINDEX 
+         end
+    end)
+    
+    -- Close dropdown if clicked outside (from v2.5)
+    local clickOutsideConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        if not gameProcessed and input.UserInputType == Enum.UserInputType.MouseButton1 then
+            local mousePos = UserInputService:GetMouseLocation()
+            -- Need absolute positions which might be tricky if parent isn't direct ScreenGui child
+            -- Let's use a simpler check: is the mouse over the button or the (visible) options frame?
+            local isMouseOverButton = displayButton:GetMouseHovering() -- Might not be reliable depending on UIS usage
+            local isMouseOverOptions = optionsScrollFrame.Visible and optionsScrollFrame:GetMouseHovering()
+
+             -- Crude check as GetMouseHovering() can be unreliable with overlapping UI / ScrollingFrames
+            local buttonRect = Rect.new(displayButton.AbsolutePosition, displayButton.AbsolutePosition + displayButton.AbsoluteSize)
+            local optionsRect = Rect.new(optionsScrollFrame.AbsolutePosition, optionsScrollFrame.AbsolutePosition + optionsScrollFrame.AbsoluteSize)
+            local mousePos = UserInputService:GetMouseLocation()
+            
+            if optionsScrollFrame.Visible and 
+               not buttonRect:Contains(mousePos) and 
+               not optionsRect:Contains(mousePos) then
+                 -- If click was detected and mouse seems outside, close it.
+                optionsScrollFrame.Visible = false
+                dropdownContainer.ZIndex = BASE_ZINDEX -- Reset ZIndex
+            end
+        end
+    end)
+
+    -- Cleanup connection when dropdown is destroyed
+    dropdownContainer.Destroying:Connect(function()
+        if clickOutsideConnection then clickOutsideConnection:Disconnect() end
+    end)
+
+    return dropdownContainer
+end
+-- ================== END CUSTOM DROPDOWN FUNCTION ==================
+
+
+-- UI Sections (Using Custom Dropdown - Unchanged Parenting/Layout)
+local incomingSettingsFrame = Instance.new("Frame"); incomingSettingsFrame.Name = "IncomingSettingsFrame"; incomingSettingsFrame.Size = UDim2.new(1, 0, 0, 55); incomingSettingsFrame.BackgroundTransparency = 1; incomingSettingsFrame.ClipsDescendants = false; -- Allow overflow
+incomingSettingsFrame.LayoutOrder = 1; incomingSettingsFrame.Visible = true; incomingSettingsFrame.Parent = contentFrame
+local incomingLabel = Instance.new("TextLabel"); incomingLabel.Name = "IncomingLabel"; incomingLabel.Size = UDim2.new(1, 0, 0, 20); incomingLabel.Position = UDim2.new(0, 0, 0, 0); incomingLabel.BackgroundTransparency = 1; incomingLabel.TextColor3 = Color3.fromRGB(200, 200, 200); incomingLabel.Font = Enum.Font.SourceSansBold; incomingLabel.TextSize = 14; incomingLabel.Text = "Incoming Messages Settings:"; incomingLabel.TextXAlignment = Enum.TextXAlignment.Left; incomingLabel.Parent = incomingSettingsFrame
+local incomingControlsFrame = Instance.new("Frame"); incomingControlsFrame.Name = "IncomingControlsFrame"; incomingControlsFrame.Size = UDim2.new(1, 0, 0, 30); incomingControlsFrame.Position = UDim2.new(0,0, 0, 20); incomingControlsFrame.BackgroundTransparency = 1; incomingControlsFrame.ClipsDescendants = false; -- Allow overflow
+incomingControlsFrame.Parent = incomingSettingsFrame
+local incomingToggle = Instance.new("TextButton"); incomingToggle.Name = "IncomingToggle"; incomingToggle.Size = UDim2.new(0, 20, 0, 20); incomingToggle.Position = UDim2.new(0, 5, 0.5, -10); incomingToggle.BackgroundColor3 = Config.IncomingTranslationEnabled and Color3.fromRGB(80, 180, 80) or Color3.fromRGB(180, 80, 80); incomingToggle.TextColor3 = Color3.fromRGB(255, 255, 255); incomingToggle.Font = Enum.Font.SourceSansBold; incomingToggle.TextSize = 14; incomingToggle.Text = Config.IncomingTranslationEnabled and "ON" or "OFF"; incomingToggle.ZIndex = 2; incomingToggle.Parent = incomingControlsFrame
+local incomingLangLabel = Instance.new("TextLabel"); incomingLangLabel.Name = "IncomingLangLabel"; incomingLangLabel.Size = UDim2.new(0.4, -30, 0, 20); incomingLangLabel.Position = UDim2.new(0, 30, 0.5, -10); incomingLangLabel.BackgroundTransparency = 1; incomingLangLabel.TextColor3 = Color3.fromRGB(200, 200, 200); incomingLangLabel.Font = Enum.Font.SourceSans; incomingLangLabel.TextSize = 14; incomingLangLabel.Text = "Translate To:"; incomingLangLabel.TextXAlignment = Enum.TextXAlignment.Left; incomingLangLabel.ZIndex = 2; incomingLangLabel.Parent = incomingControlsFrame
+local incomingDropdownContainer = createCustomDropDown(incomingControlsFrame, "TargetIncomingLanguage", Config.TargetIncomingLanguage); incomingDropdownContainer.Position = UDim2.new(0.4, 0, 0.5, -12.5); incomingDropdownContainer.Parent = incomingControlsFrame
+
+local quickInputFrame = Instance.new("Frame"); quickInputFrame.Name = "QuickInputFrame"; quickInputFrame.Size = UDim2.new(1, 0, 0, 30); quickInputFrame.BackgroundTransparency = 1; quickInputFrame.LayoutOrder = 2; quickInputFrame.Parent = contentFrame
+local quickInputTextBox = Instance.new("TextBox"); quickInputTextBox.Name = "QuickInputTextBox"; quickInputTextBox.Size = UDim2.new(1, 0, 1, 0); quickInputTextBox.BackgroundColor3 = Color3.fromRGB(55, 55, 55); quickInputTextBox.TextColor3 = Color3.fromRGB(220, 220, 220); quickInputTextBox.PlaceholderText = "Quick Input / Command..."; quickInputTextBox.PlaceholderColor3 = Color3.fromRGB(150, 150, 150); quickInputTextBox.Font = Enum.Font.SourceSans; quickInputTextBox.TextSize = 14; quickInputTextBox.ClearTextOnFocus = false; quickInputTextBox.MultiLine = false; quickInputTextBox.ZIndex = 2; quickInputTextBox.Parent = quickInputFrame
+
+local outgoingSettingsFrame = Instance.new("Frame"); outgoingSettingsFrame.Name = "OutgoingSettingsFrame"; outgoingSettingsFrame.Size = UDim2.new(1, 0, 0, 55); outgoingSettingsFrame.BackgroundTransparency = 1; outgoingSettingsFrame.ClipsDescendants = false; -- Allow overflow
+outgoingSettingsFrame.LayoutOrder = 3; outgoingSettingsFrame.Parent = contentFrame
+local outgoingLabel = Instance.new("TextLabel"); outgoingLabel.Name = "OutgoingLabel"; outgoingLabel.Size = UDim2.new(1, 0, 0, 20); outgoingLabel.Position = UDim2.new(0, 0, 0, 0); outgoingLabel.BackgroundTransparency = 1; outgoingLabel.TextColor3 = Color3.fromRGB(200, 200, 200); outgoingLabel.Font = Enum.Font.SourceSansBold; outgoingLabel.TextSize = 14; outgoingLabel.Text = "Outgoing Messages:"; outgoingLabel.TextXAlignment = Enum.TextXAlignment.Left; outgoingLabel.Parent = outgoingSettingsFrame
+local outgoingControlsFrame = Instance.new("Frame"); outgoingControlsFrame.Name = "OutgoingControlsFrame"; outgoingControlsFrame.Size = UDim2.new(1, 0, 0, 30); outgoingControlsFrame.Position = UDim2.new(0,0, 0, 20); outgoingControlsFrame.BackgroundTransparency = 1; outgoingControlsFrame.ClipsDescendants = false; -- Allow overflow
+outgoingControlsFrame.Parent = outgoingSettingsFrame
+local outgoingToggle = Instance.new("TextButton"); outgoingToggle.Name = "OutgoingToggle"; outgoingToggle.Size = UDim2.new(0, 20, 0, 20); outgoingToggle.Position = UDim2.new(0, 5, 0.5, -10); outgoingToggle.BackgroundColor3 = Config.OutgoingTranslationEnabled and Color3.fromRGB(80, 180, 80) or Color3.fromRGB(180, 80, 80); outgoingToggle.TextColor3 = Color3.fromRGB(255, 255, 255); outgoingToggle.Font = Enum.Font.SourceSansBold; outgoingToggle.TextSize = 14; outgoingToggle.Text = Config.OutgoingTranslationEnabled and "ON" or "OFF"; outgoingToggle.ZIndex = 2; outgoingToggle.Parent = outgoingControlsFrame
+local outgoingLangLabel = Instance.new("TextLabel"); outgoingLangLabel.Name = "OutgoingLangLabel"; outgoingLangLabel.Size = UDim2.new(0.4, -30, 0, 20); outgoingLangLabel.Position = UDim2.new(0, 30, 0.5, -10); outgoingLangLabel.BackgroundTransparency = 1; outgoingLangLabel.TextColor3 = Color3.fromRGB(200, 200, 200); outgoingLangLabel.Font = Enum.Font.SourceSans; outgoingLangLabel.TextSize = 14; outgoingLangLabel.Text = "Translate To:"; outgoingLangLabel.TextXAlignment = Enum.TextXAlignment.Left; outgoingLangLabel.ZIndex = 2; outgoingLangLabel.Parent = outgoingControlsFrame
+local outgoingDropdownContainer = createCustomDropDown(outgoingControlsFrame, "TargetOutgoingLanguage", Config.TargetOutgoingLanguage); outgoingDropdownContainer.Position = UDim2.new(0.4, 0, 0.5, -12.5); outgoingDropdownContainer.Parent = outgoingControlsFrame
+
+local sendAreaFrame = Instance.new("Frame"); sendAreaFrame.Name = "SendAreaFrame"; sendAreaFrame.Size = UDim2.new(1, 0, 0, 30); sendAreaFrame.BackgroundTransparency = 1; sendAreaFrame.LayoutOrder = 4; sendAreaFrame.Parent = contentFrame
+local inputTextBox = Instance.new("TextBox"); inputTextBox.Name = "InputTextBox"; inputTextBox.Size = UDim2.new(1, -70, 1, 0); inputTextBox.Position = UDim2.new(0, 0, 0, 0); inputTextBox.BackgroundColor3 = Color3.fromRGB(50, 50, 50); inputTextBox.TextColor3 = Color3.fromRGB(220, 220, 220); inputTextBox.PlaceholderText = "Type message here..."; inputTextBox.PlaceholderColor3 = Color3.fromRGB(150, 150, 150); inputTextBox.Font = Enum.Font.SourceSans; inputTextBox.TextSize = 14; inputTextBox.ClearTextOnFocus = false; inputTextBox.MultiLine = false; inputTextBox.ZIndex = 2; inputTextBox.Parent = sendAreaFrame
+local sendButton = Instance.new("TextButton"); sendButton.Name = "SendButton"; sendButton.Size = UDim2.new(0, 65, 1, 0); sendButton.Position = UDim2.new(1, -65, 0, 0); sendButton.BackgroundColor3 = Color3.fromRGB(70, 130, 180); sendButton.TextColor3 = Color3.fromRGB(255, 255, 255); sendButton.Font = Enum.Font.SourceSansBold; sendButton.TextSize = 14; sendButton.Text = "Send"; sendButton.ZIndex = 2; sendButton.Parent = sendAreaFrame
+
+
+-- =============================================================================
+-- Translation Log UI Creation Function (Unchanged from v2.5)
+-- =============================================================================
+local function createTranslationLogWindow() if translationLogGui then return end; print("DAN_Translator: Creating Translation Log window..."); translationLogGui = Instance.new("ScreenGui"); translationLogGui.Name = "DAN_TranslatorLogUI"; translationLogGui.ResetOnSpawn = false; translationLogGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling; translationLogGui.DisplayOrder = screenGui and screenGui.DisplayOrder + 1 or 1; translationLogGui.Parent = PlayerGui; translationLogFrame = Instance.new("Frame"); translationLogFrame.Name = "TranslationLogFrame"; translationLogFrame.Size = UDim2.new(0, 250, 0, 340); translationLogFrame.Position = UDim2.new(0, 0, 0, 0); translationLogFrame.AnchorPoint = Vector2.new(0, 0.5); translationLogFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 35); translationLogFrame.BorderColor3 = Color3.fromRGB(15, 15, 15); translationLogFrame.BorderSizePixel = 1; translationLogFrame.Active = true; translationLogFrame.Draggable = false; translationLogFrame.Selectable = false; translationLogFrame.ClipsDescendants = true; translationLogFrame.Parent = translationLogGui; local logTitleBar = Instance.new("Frame"); logTitleBar.Name = "LogTitleBar"; logTitleBar.Size = UDim2.new(1, 0, 0, 25); logTitleBar.BackgroundColor3 = Color3.fromRGB(55, 55, 55); logTitleBar.BorderSizePixel = 0; logTitleBar.Parent = translationLogFrame; local logTitleLabel = Instance.new("TextLabel"); logTitleLabel.Name = "LogTitleLabel"; logTitleLabel.Size = UDim2.new(1, 0, 1, 0); logTitleLabel.Position = UDim2.new(0, 0, 0, 0); logTitleLabel.BackgroundTransparency = 1; logTitleLabel.TextColor3 = Color3.fromRGB(200, 200, 200); logTitleLabel.Font = Enum.Font.SourceSansBold; logTitleLabel.TextSize = 14; logTitleLabel.Text = "Translation Log"; logTitleLabel.TextXAlignment = Enum.TextXAlignment.Center; logTitleLabel.TextYAlignment = Enum.TextYAlignment.Center; logTitleLabel.Parent = logTitleBar; translationLogScroll = Instance.new("ScrollingFrame"); translationLogScroll.Name = "TranslationLogScroll"; translationLogScroll.Size = UDim2.new(1, -10, 1, -30); translationLogScroll.Position = UDim2.new(0, 5, 0, 25); translationLogScroll.BackgroundColor3 = Color3.fromRGB(45, 45, 45); translationLogScroll.BorderColor3 = Color3.fromRGB(25, 25, 25); translationLogScroll.BorderSizePixel = 1; translationLogScroll.CanvasSize = UDim2.new(0, 0, 0, 0); translationLogScroll.ScrollBarThickness = 5; translationLogScroll.ScrollingDirection = Enum.ScrollingDirection.Y; translationLogScroll.Parent = translationLogFrame; translationLogListLayout = Instance.new("UIListLayout"); translationLogListLayout.Padding = UDim.new(0, 3); translationLogListLayout.SortOrder = Enum.SortOrder.LayoutOrder; translationLogListLayout.Parent = translationLogScroll end
+
+-- =============================================================================
+-- Log Window Display Function (Unchanged from v2.5)
+-- =============================================================================
+local function displayInLogWindow(formattedText) if not translationLogGui then createTranslationLogWindow() end; if not translationLogScroll or not translationLogListLayout then warn("DAN_Translator: Translation Log UI components not available for display."); return end; local messageLabel = Instance.new("TextLabel"); messageLabel.Name = "TranslatedMessage"; messageLabel.Text = formattedText; messageLabel.Font = Enum.Font.SourceSans; messageLabel.TextSize = 14; messageLabel.TextColor3 = Color3.fromRGB(210, 210, 210); messageLabel.TextWrapped = true; messageLabel.TextXAlignment = Enum.TextXAlignment.Left; messageLabel.TextYAlignment = Enum.TextYAlignment.Top; messageLabel.Size = UDim2.new(1, -translationLogListLayout.Padding.Offset*2 - translationLogScroll.ScrollBarThickness , 0, 0); messageLabel.AutomaticSize = Enum.AutomaticSize.Y; messageLabel.BackgroundTransparency = 1; messageLabel.Parent = translationLogScroll; local maxMessages = 100; while #translationLogScroll:GetChildren() > maxMessages + 1 do local oldestMessage = translationLogScroll:GetChildren()[1]; if oldestMessage:IsA("TextLabel") then oldestMessage:Destroy() else break end end; task.wait(); if translationLogScroll and translationLogScroll.Parent then translationLogScroll.CanvasPosition = Vector2.new(0, translationLogScroll.CanvasSize.Y.Offset) end end
+
+-- =============================================================================
+-- Universal Chat Sending Function (Unchanged from v2.5)
+-- =============================================================================
+local function sendChatMessage(message) print("DAN_Translator: Attempting to send chat message:", message:sub(1,50)); local success, err = pcall(function() local chatEvent = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents"); if chatEvent then local req = chatEvent:FindFirstChild("SayMessageRequest"); if req then req:FireServer(message, "All"); return true end end; return false end); if success and err == true then print("DAN_Translator: Sent via DefaultChatSystemChatEvents.SayMessageRequest"); return true end; if not success then warn("DAN_Translator: Error during DefaultChatSystem check:", err) end; success, err = pcall(function() LocalPlayer.Chat(LocalPlayer, message) end); if success then print("DAN_Translator: Attempted send via LocalPlayer:Chat()"); return true else warn("DAN_Translator: Error during LocalPlayer:Chat():", err) end; success, err = pcall(function() local req = ReplicatedStorage:FindFirstChild("SayMessageRequest"); if req and req:IsA("RemoteEvent") then req:FireServer(message, "All"); return true end; return false end); if success and err == true then print("DAN_Translator: Sent via ReplicatedStorage.SayMessageRequest"); return true end; if not success then warn("DAN_Translator: Error during ReplicatedStorage.SayMessageRequest check:", err) end; warn("DAN_Translator: All known chat sending methods failed."); displayInLogWindow("[DAN]: Failed to send message: " .. message:sub(1,50)); return false end
+
+-- =============================================================================
+-- UI Logic and Event Handling (Main Window - Unchanged)
+-- =============================================================================
+closeButton.MouseButton1Click:Connect(function() print("DAN_Translator: Close button clicked! Destroying UIs."); if mainUiRenderSteppedConnection then mainUiRenderSteppedConnection:Disconnect(); mainUiRenderSteppedConnection = nil end; pcall(function() if screenGui then screenGui:Destroy() end end); pcall(function() if translationLogGui then translationLogGui:Destroy() end end); screenGui = nil; mainFrame = nil; translationLogGui = nil; translationLogFrame = nil; translationLogScroll = nil; translationLogListLayout = nil; end)
+incomingToggle.MouseButton1Click:Connect(function() Config.IncomingTranslationEnabled = not Config.IncomingTranslationEnabled; incomingToggle.Text = Config.IncomingTranslationEnabled and "ON" or "OFF"; incomingToggle.BackgroundColor3 = Config.IncomingTranslationEnabled and Color3.fromRGB(80, 180, 80) or Color3.fromRGB(180, 80, 80) end)
+outgoingToggle.MouseButton1Click:Connect(function() Config.OutgoingTranslationEnabled = not Config.OutgoingTranslationEnabled; outgoingToggle.Text = Config.OutgoingTranslationEnabled and "ON" or "OFF"; outgoingToggle.BackgroundColor3 = Config.OutgoingTranslationEnabled and Color3.fromRGB(80, 180, 80) or Color3.fromRGB(180, 80, 80) end)
+local function handleSendAction(messageText, sourceTextBox) if messageText == "" then return end; if sourceTextBox then sourceTextBox.Text = "" end; local messageToSend = messageText; if Config.OutgoingTranslationEnabled then local targetLang = Config.TargetOutgoingLanguage; print("DAN_Translator: Translating outgoing message to", targetLang, "..."); local translationResult = translate(messageText, targetLang, 'auto'); if translationResult and translationResult.text then messageToSend = translationResult.text; print("DAN_Translator: Translation successful:", messageToSend:sub(1,50)) else warn("DAN_Translator: Outgoing translation failed. Using original message.") end end; sendChatMessage(messageToSend) end
+sendButton.MouseButton1Click:Connect(function() handleSendAction(inputTextBox.Text, inputTextBox) end)
+inputTextBox.FocusLost:Connect(function(enterPressed) if enterPressed then handleSendAction(inputTextBox.Text, inputTextBox) end end)
+quickInputTextBox.FocusLost:Connect(function(enterPressed) if enterPressed then handleSendAction(quickInputTextBox.Text, quickInputTextBox) end end)
+
+-- =============================================================================
+-- Incoming Message Handling (Exclude Russian, Use Log Window - Unchanged)
+-- =============================================================================
+local function handleIncomingMessage(player, message) if player == LocalPlayer or not Config.IncomingTranslationEnabled then return end; local targetLang = Config.TargetIncomingLanguage; local translationResult = translate(message, targetLang, 'auto'); if translationResult then if translationResult.fromLanguage == "ru" then print("DAN_Translator: Skipping translation, detected source language is Russian."); return end; if translationResult.text and translationResult.fromLanguage ~= targetLang then local displayText = string.format("[%s > %s] [%s]: %s", translationResult.fromLanguage:upper(), targetLang:upper(), player.Name, translationResult.text); displayInLogWindow(displayText) end elseif translationResult == nil then print("DAN_Translator: Incoming translation failed for message from", player.Name) end end
+for _, player in ipairs(Players:GetPlayers()) do if player ~= LocalPlayer then player.Chatted:Connect(function(msg) handleIncomingMessage(player, msg) end) end end
+Players.PlayerAdded:Connect(function(player) if player ~= LocalPlayer then player.Chatted:Connect(function(msg) handleIncomingMessage(player, msg) end) end end)
+
+-- =============================================================================
+-- Log Window Positioning Logic (Unchanged from v2.5)
+-- =============================================================================
+local function updateLogWindowPosition() if mainFrame and mainFrame.Parent and translationLogFrame and translationLogFrame.Parent then local mainAbsPos = mainFrame.AbsolutePosition; local mainAbsSize = mainFrame.AbsoluteSize; local logAbsSize = translationLogFrame.AbsoluteSize; local targetX = mainAbsPos.X + mainAbsSize.X + 5; local targetY = mainAbsPos.Y + (mainAbsSize.Y / 2); translationLogFrame.Position = UDim2.fromOffset(targetX, targetY); translationLogFrame.AnchorPoint = Vector2.new(0, 0.5) else if mainUiRenderSteppedConnection then mainUiRenderSteppedConnection:Disconnect(); mainUiRenderSteppedConnection = nil end end end
+mainUiRenderSteppedConnection = RunService.RenderStepped:Connect(updateLogWindowPosition)
+
+-- =============================================================================
+-- Initialization Message (Unchanged)
+-- =============================================================================
+task.wait(1); pcall(StarterGui.SetCore, StarterGui, "SendNotification", { Title = "DAN Translator", Text = "UI Translator Loaded! Incoming translation OFF by default.", Duration = 5 }); print("DAN_Translator: UI Translator script v2.6 loaded successfully.")
+if screenGui then screenGui.Destroying:Connect(function() print("DAN_Translator: Main UI is being destroyed."); if mainUiRenderSteppedConnection then mainUiRenderSteppedConnection:Disconnect(); mainUiRenderSteppedConnection = nil end; if translationLogGui then pcall(function() translationLogGui:Destroy() end); translationLogGui = nil; end end) end
