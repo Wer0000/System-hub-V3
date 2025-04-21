@@ -2176,6 +2176,8 @@ AddMerch("https://www.roblox.com/catalog/92966113718197/Black-Gray-Plaid-School-
 AddMerch("https://www.roblox.com/catalog/122167837589881", "White Socks", 5)
 AddMerch("https://www.roblox.com/catalog/122685893074039/chibi-girl-cute-pants", "chibi girl cute pants", 5)
 AddMerch("https://www.roblox.com/catalog/128282112681974", "Dress halloween - black model dahood vampire", 5)
+AddMerch("https://www.roblox.com/catalog/106371533758266", "Transparent Shirt", 5)
+AddMerch("https://www.roblox.com/catalog/137694143747772", "Transparent Pants", 5)
 
 
 
@@ -2456,6 +2458,7 @@ function RequestClickMoreScriptButton(scriptname, script, description, userid, u
     end)
 end
 ---
+
 
 
 
