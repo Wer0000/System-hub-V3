@@ -1,5 +1,5 @@
--- Название: TurtleUiLib_SectionBased (Модифицированная версия)
--- Описание: UI-библиотека для создания ОДНОГО окна с разделами.
+-- Название: TurtleUiLib_TwoPanel.lua
+-- Описание: UI-библиотека для создания ОДНОГО окна с левой панелью разделов и правой панелью контента.
 
 local library = {}
 
@@ -7,36 +7,42 @@ local library = {}
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
-local CoreGui = game:GetService("CoreGui") -- Используем CoreGui для большей устойчивости
+local CoreGui = game:GetService("CoreGui")
 
 local LocalPlayer = Players.LocalPlayer
-local mouse = LocalPlayer:GetMouse() -- Понадобится для слайдера, если он будет добавлен позже
 
-local screenGui = nil -- Главный ScreenGui
-local mainPanel = nil -- Основная панель (Frame)
-local sectionContainer = nil -- ScrollingFrame для секций
-local sectionListLayout = nil -- UIListLayout для секций
-local currentSectionContentFrame = nil -- Frame текущей активной секции
-local sectionVerticalOffsets = {} -- Хранит текущий Y-отступ для каждой секции {sectionContentFrame = offset}
-local sectionHeights = {} -- Хранит текущую высоту контента каждой секции {sectionContentFrame = height}
+local screenGui = nil
+local mainPanel = nil
+local titleBar = nil
+local mainContentArea = nil -- Фрейм под заголовком, содержащий левую и правую панели
+local leftPanel = nil -- ScrollingFrame для кнопок разделов
+local rightPanel = nil -- ScrollingFrame для контента активного раздела
+local leftPanelLayout = nil -- UIListLayout для кнопок разделов
 
-local isPanelVisible = true -- Для сворачивания всей панели
-local PADDING = 5 -- Отступы
+local sectionButtons = {} -- Хранит кнопки разделов {name = button}
+local sectionContentFrames = {} -- Хранит фреймы контента {name = frame}
+local activeSectionName = nil -- Имя текущего активного раздела
+
+local isPanelVisible = true
+local PADDING = 5
+local LEFT_PANEL_WIDTH = 100 -- Ширина левой панели
 
 -- Состояние перетаскивания
 local dragging = false
 local dragInput = nil
 local dragStart = nil
 local startPos = nil
+local dragConnection = nil -- Для RenderStepped
 
--- Защита GUI (из оригинальной библиотеки)
+-- Защита GUI
 local destroyed = false
-if CoreGui:FindFirstChild('TurtleUiLib_SectionBased') then
-    CoreGui:FindFirstChild('TurtleUiLib_SectionBased'):Destroy()
+if CoreGui:FindFirstChild('TurtleUiLib_TwoPanel') then
+    CoreGui:FindFirstChild('TurtleUiLib_TwoPanel'):Destroy()
     destroyed = true
 end
 
 local function protect_gui(obj)
+	-- (Функция protect_gui остается без изменений)
 	if destroyed then
 		obj.Parent = CoreGui
 		return
@@ -51,20 +57,11 @@ local function protect_gui(obj)
 	end
 end
 
--- Функция Lerp (из оригинальной библиотеки, может пригодиться для слайдеров)
-function Lerp(a, b, c)
-	return a + ((b - a) * c)
-end
-
--- Функция Перетаскивания (применим к заголовку)
-local dragConnection = nil
+-- Функция Перетаскивания
 local function enableDrag(frame, handle)
+	-- (Функция enableDrag остается почти без изменений, использует RenderStepped)
 	handle = handle or frame
-	-- Отключаем старое соединение, если оно есть
-	if dragConnection then
-		dragConnection:Disconnect()
-		dragConnection = nil
-	end
+	if dragConnection then dragConnection:Disconnect(); dragConnection = nil end
 
 	local handleInputBeganConn, handleInputChangedConn, userInputEndedConn
 
@@ -90,63 +87,91 @@ local function enableDrag(frame, handle)
 			end)
 		end
 	end)
-
 	handleInputChangedConn = handle.InputChanged:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
 			dragInput = input
 		end
 	end)
-
-	-- Используем RenderStepped для обновления позиции во время перетаскивания
 	dragConnection = RunService.RenderStepped:Connect(function()
 		if dragging and dragInput then
 			local currentPos = dragInput.Position
 			local delta = currentPos - dragStart
 			frame.Position = UDim2.new(
-				startPos.X.Scale,
-				startPos.X.Offset + delta.X,
-				startPos.Y.Scale,
-				startPos.Y.Offset + delta.Y
+				startPos.X.Scale, startPos.X.Offset + delta.X,
+				startPos.Y.Scale, startPos.Y.Offset + delta.Y
 			)
 		end
 	end)
 end
 
--- Обновление CanvasSize контейнера секций
-local function updateSectionContainerCanvasSize()
-	if not sectionContainer or not sectionListLayout then return end
+-- Обновление CanvasSize правой панели
+local function updateRightPanelCanvasSize()
+	if not rightPanel or not activeSectionName then return end
+	local contentFrame = sectionContentFrames[activeSectionName]
+	if contentFrame and contentFrame:FindFirstChild("ContentListLayout") then
+		-- Даем время UIListLayout обновиться
+		RunService.Heartbeat:Wait()
+		local layout = contentFrame:FindFirstChild("ContentListLayout")
+		rightPanel.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + PADDING * 2)
+	else
+		rightPanel.CanvasSize = UDim2.new(0, 0, 0, 0)
+	end
+end
 
-	local totalHeight = PADDING -- Начинаем с верхнего отступа
-	for _, sectionFrame in ipairs(sectionContainer:GetChildren()) do
-		if sectionFrame:IsA("Frame") and sectionFrame.Name == "SectionFrame" then
-			totalHeight = totalHeight + sectionFrame.AbsoluteSize.Y + sectionListLayout.Padding.Offset
+-- Устанавливает активную секцию
+local function setActiveSection(sectionName)
+	if activeSectionName == sectionName then return end -- Уже активна
+
+	activeSectionName = sectionName
+
+	-- Скрываем все фреймы контента
+	for name, frame in pairs(sectionContentFrames) do
+		frame.Visible = false
+	end
+	-- Показываем нужный фрейм контента
+	if sectionContentFrames[sectionName] then
+		sectionContentFrames[sectionName].Visible = true
+	end
+
+	-- Обновляем вид кнопок разделов (визуальная обратная связь)
+	for name, button in pairs(sectionButtons) do
+		if name == sectionName then
+			button.BackgroundColor3 = Color3.fromRGB(80, 80, 80) -- Цвет активной кнопки
+			button.TextColor3 = Color3.fromRGB(255, 255, 255)
+		else
+			button.BackgroundColor3 = Color3.fromRGB(53, 59, 72) -- Цвет неактивной кнопки
+            button.TextColor3 = Color3.fromRGB(200, 200, 200)
 		end
 	end
-	sectionContainer.CanvasSize = UDim2.new(0, 0, 0, totalHeight)
+
+	-- Обновляем скролл правой панели
+	task.defer(updateRightPanelCanvasSize) -- Используем defer для надежности
 end
 
 -- === Публичные Функции Библиотеки ===
 
-function library:Initialize(title, width)
+function library:Initialize(title, totalWidth, height)
 	if screenGui then
 		warn("Библиотека уже инициализирована.")
-		return library -- Возвращаем себя для цепочки вызовов
+		return library
 	end
 
 	title = title or "UI Library"
-	width = width or 250
+	totalWidth = totalWidth or 450 -- Общая ширина окна
+    height = height or 400 -- Высота окна
 	local titleBarHeight = 30
+    local rightPanelWidth = totalWidth - LEFT_PANEL_WIDTH - PADDING -- Вычисляем ширину правой панели
 
 	screenGui = Instance.new("ScreenGui")
-	screenGui.Name = "TurtleUiLib_SectionBased"
+	screenGui.Name = "TurtleUiLib_TwoPanel"
 	screenGui.ResetOnSpawn = false
 	screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-	screenGui.DisplayOrder = 1000 -- Высокий порядок отображения
+	screenGui.DisplayOrder = 1000
 
 	mainPanel = Instance.new("Frame")
 	mainPanel.Name = "MainPanel"
-	mainPanel.Size = UDim2.new(0, width, 0, titleBarHeight) -- Начальная высота = только заголовок
-	mainPanel.Position = UDim2.new(0, 20, 0, 20) -- Начальная позиция
+	mainPanel.Size = UDim2.new(0, totalWidth, 0, height)
+	mainPanel.Position = UDim2.new(0, 20, 0, 20)
 	mainPanel.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
 	mainPanel.BorderColor3 = Color3.fromRGB(80, 80, 80)
 	mainPanel.BorderSizePixel = 1
@@ -154,7 +179,7 @@ function library:Initialize(title, width)
 	mainPanel.ClipsDescendants = true
 	mainPanel.Parent = screenGui
 
-	local titleBar = Instance.new("Frame")
+	titleBar = Instance.new("Frame")
 	titleBar.Name = "TitleBar"
 	titleBar.Size = UDim2.new(1, 0, 0, titleBarHeight)
 	titleBar.BackgroundColor3 = Color3.fromRGB(0, 168, 255) -- Цвет из оригинала
@@ -163,368 +188,320 @@ function library:Initialize(title, width)
 
 	local titleLabel = Instance.new("TextLabel")
 	titleLabel.Name = "TitleLabel"
-	titleLabel.Size = UDim2.new(1, -(titleBarHeight * 2) - (PADDING * 2), 1, 0) -- Место для кнопок
-	titleLabel.Position = UDim2.new(0, PADDING, 0, 0)
-	titleLabel.BackgroundTransparency = 1.000
-	titleLabel.Font = Enum.Font.SourceSans -- Шрифт из оригинала
-	titleLabel.Text = title
-	titleLabel.TextColor3 = Color3.fromRGB(47, 54, 64) -- Цвет из оригинала
-	titleLabel.TextSize = 17.000
-	titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+    titleLabel.Size = UDim2.new(1, -(titleBarHeight * 2) - (PADDING * 2), 1, 0)
+    titleLabel.Position = UDim2.new(0, PADDING, 0, 0)
+    titleLabel.BackgroundTransparency = 1.000
+    titleLabel.Font = Enum.Font.SourceSans
+    titleLabel.Text = title
+    titleLabel.TextColor3 = Color3.fromRGB(47, 54, 64)
+    titleLabel.TextSize = 17.000
+    titleLabel.TextXAlignment = Enum.TextXAlignment.Left
 	titleLabel.Parent = titleBar
 
-	-- Кнопка Закрытия (X)
 	local closeButton = Instance.new("TextButton")
+    -- (Настройки closeButton как раньше)
 	closeButton.Name = "CloseButton"
 	closeButton.Size = UDim2.new(0, titleBarHeight - PADDING * 2, 0, titleBarHeight - PADDING * 2)
 	closeButton.Position = UDim2.new(1, -titleBarHeight + PADDING, 0, PADDING)
 	closeButton.AnchorPoint = Vector2.new(1, 0)
-	closeButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50) -- Красный цвет
+	closeButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
 	closeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 	closeButton.Font = Enum.Font.SourceSansBold
 	closeButton.Text = "X"
 	closeButton.TextSize = 14
 	closeButton.ZIndex = titleBar.ZIndex + 1
 	closeButton.Parent = titleBar
-	closeButton.MouseButton1Click:Connect(function()
-		library:Destroy() -- Вызываем функцию уничтожения
-	end)
+	closeButton.MouseButton1Click:Connect(function() library:Destroy() end)
 
-	-- Кнопка Свернуть/Развернуть (_)
 	local minimizeButton = Instance.new("TextButton")
+    -- (Настройки minimizeButton как раньше)
 	minimizeButton.Name = "MinimizeButton"
 	minimizeButton.Size = UDim2.new(0, titleBarHeight - PADDING * 2, 0, titleBarHeight - PADDING * 2)
-	minimizeButton.Position = UDim2.new(1, -(titleBarHeight * 2) + PADDING, 0, PADDING) -- Левее кнопки X
+	minimizeButton.Position = UDim2.new(1, -(titleBarHeight * 2) + PADDING, 0, PADDING)
 	minimizeButton.AnchorPoint = Vector2.new(1, 0)
-	minimizeButton.BackgroundColor3 = Color3.fromRGB(0, 168, 255) -- Цвет из оригинала
-	minimizeButton.BorderColor3 = Color3.fromRGB(0, 168, 255) -- Цвет из оригинала
-	minimizeButton.TextColor3 = Color3.fromRGB(0, 0, 0) -- Цвет из оригинала
-	minimizeButton.Font = Enum.Font.SourceSansLight -- Шрифт из оригинала
+	minimizeButton.BackgroundColor3 = Color3.fromRGB(0, 168, 255)
+	minimizeButton.BorderColor3 = Color3.fromRGB(0, 168, 255)
+	minimizeButton.TextColor3 = Color3.fromRGB(0, 0, 0)
+	minimizeButton.Font = Enum.Font.SourceSansLight
 	minimizeButton.Text = "_"
 	minimizeButton.TextSize = 20.000
 	minimizeButton.ZIndex = titleBar.ZIndex + 1
 	minimizeButton.Parent = titleBar
 
-	-- Контейнер для секций
-	sectionContainer = Instance.new("ScrollingFrame")
-	sectionContainer.Name = "SectionContainer"
-	sectionContainer.Size = UDim2.new(1, 0, 1, -titleBarHeight) -- Занимает все место под заголовком
-	sectionContainer.Position = UDim2.new(0, 0, 0, titleBarHeight)
-	sectionContainer.BackgroundColor3 = Color3.fromRGB(47, 54, 64) -- Цвет фона из оригинала
-	sectionContainer.BorderColor3 = Color3.fromRGB(47, 54, 64) -- Цвет фона из оригинала
-	sectionContainer.BorderSizePixel = 0
-	sectionContainer.ScrollBarThickness = 4
-	sectionContainer.CanvasSize = UDim2.new(0, 0, 0, 0) -- Начнем с нуля
-	sectionContainer.Visible = isPanelVisible
-	sectionContainer.Parent = mainPanel
+    -- Фрейм для левой и правой панелей
+    mainContentArea = Instance.new("Frame")
+    mainContentArea.Name = "MainContentArea"
+    mainContentArea.Size = UDim2.new(1, 0, 1, -titleBarHeight) -- Занимает все под заголовком
+    mainContentArea.Position = UDim2.new(0, 0, 0, titleBarHeight)
+    mainContentArea.BackgroundTransparency = 1.0
+    mainContentArea.BorderSizePixel = 0
+    mainContentArea.ClipsDescendants = true
+    mainContentArea.Visible = isPanelVisible
+    mainContentArea.Parent = mainPanel
 
-	sectionListLayout = Instance.new("UIListLayout")
-	sectionListLayout.Padding = UDim.new(0, PADDING)
-	sectionListLayout.FillDirection = Enum.FillDirection.Vertical
-	sectionListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-	sectionListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-	sectionListLayout.Parent = sectionContainer
+	-- Левая Панель (Список Разделов)
+	leftPanel = Instance.new("ScrollingFrame")
+	leftPanel.Name = "LeftPanel"
+	leftPanel.Size = UDim2.new(0, LEFT_PANEL_WIDTH, 1, 0) -- Фиксированная ширина, высота 100%
+	leftPanel.Position = UDim2.new(0, 0, 0, 0)
+	leftPanel.BackgroundColor3 = Color3.fromRGB(50, 50, 50) -- Цвет фона левой панели
+	leftPanel.BorderColor3 = Color3.fromRGB(80, 80, 80)
+    leftPanel.BorderSizePixel = 1
+	leftPanel.ScrollBarThickness = 4
+    leftPanel.CanvasSize = UDim2.new(0, 0, 0, 0) -- Авторасчет по контенту
+    leftPanel.ScrollingDirection = Enum.ScrollingDirection.Y
+	leftPanel.Parent = mainContentArea
+
+	leftPanelLayout = Instance.new("UIListLayout")
+	leftPanelLayout.Padding = UDim.new(0, PADDING)
+	leftPanelLayout.FillDirection = Enum.FillDirection.Vertical
+	leftPanelLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+	leftPanelLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	leftPanelLayout.Parent = leftPanel
+
+	-- Правая Панель (Контент Раздела)
+	rightPanel = Instance.new("ScrollingFrame")
+	rightPanel.Name = "RightPanel"
+	rightPanel.Size = UDim2.new(0, rightPanelWidth, 1, 0) -- Ширина вычислена, высота 100%
+	rightPanel.Position = UDim2.new(0, LEFT_PANEL_WIDTH + PADDING, 0, 0) -- Правее левой панели с отступом
+	rightPanel.BackgroundColor3 = Color3.fromRGB(47, 54, 64) -- Цвет фона контента
+	rightPanel.BorderColor3 = Color3.fromRGB(80, 80, 80)
+    rightPanel.BorderSizePixel = 1
+	rightPanel.ScrollBarThickness = 6
+	rightPanel.CanvasSize = UDim2.new(0, 0, 0, 0) -- Будет меняться
+    rightPanel.ScrollingDirection = Enum.ScrollingDirection.Y
+	rightPanel.Parent = mainContentArea
 
 	-- Логика сворачивания/разворачивания всей панели
 	minimizeButton.MouseButton1Click:Connect(function()
 		isPanelVisible = not isPanelVisible
-		sectionContainer.Visible = isPanelVisible
+		mainContentArea.Visible = isPanelVisible
 		if isPanelVisible then
 			minimizeButton.Text = "_"
-			-- Восстанавливаем размер панели (анимация опциональна)
-			mainPanel.Size = UDim2.new(mainPanel.Size.X.Scale, mainPanel.Size.X.Offset, 0, titleBarHeight + sectionContainer.AbsoluteSize.Y) -- Приблизительно
-			updateSectionContainerCanvasSize() -- Обновляем размер для скролла
+            mainPanel:TweenSize(UDim2.new(0, totalWidth, 0, height), Enum.EasingDirection.Out, Enum.EasingStyle.Quad, 0.2, true)
 		else
 			minimizeButton.Text = "+"
-			-- Сворачиваем панель до заголовка
-			mainPanel.Size = UDim2.new(mainPanel.Size.X.Scale, mainPanel.Size.X.Offset, 0, titleBarHeight)
+            mainPanel:TweenSize(UDim2.new(0, totalWidth, 0, titleBarHeight), Enum.EasingDirection.Out, Enum.EasingStyle.Quad, 0.2, true)
 		end
 	end)
 
-	-- Активируем перетаскивание
 	enableDrag(mainPanel, titleBar)
-
-	-- Защищаем и добавляем в CoreGui
 	protect_gui(screenGui)
 
-	-- Обновляем размер после первой отрисовки
-	RunService.Heartbeat:Wait()
-	updateSectionContainerCanvasSize()
-
-	print("TurtleUiLib_SectionBased Initialized.")
-	return library -- Возвращаем библиотеку для цепочки вызовов
+	print("TurtleUiLib_TwoPanel Initialized.")
+	return library
 end
 
 function library:AddSection(name)
-	if not screenGui or not sectionContainer then
-		warn("Библиотека не инициализирована. Вызовите library:Initialize() сначала.")
-		return
-	end
-
+	if not screenGui then warn("Библиотека не инициализирована."); return end
 	name = name or "Section"
-	local sectionHeaderHeight = 25
 
-	-- Основной Frame для секции (Header + Content)
-	local sectionFrame = Instance.new("Frame")
-    sectionFrame.Name = "SectionFrame"
-    sectionFrame.BackgroundTransparency = 1
-    sectionFrame.Size = UDim2.new(1, -PADDING*2, 0, sectionHeaderHeight) -- Начнем с высоты заголовка
-    sectionFrame.AutomaticSize = Enum.AutomaticSize.Y -- Автоматически изменяет высоту Y
-    sectionFrame.LayoutOrder = #sectionContainer:GetChildren() + 1 -- Порядок добавления
-    sectionFrame.Parent = sectionContainer
+	-- 1. Создаем кнопку в левой панели
+	local sectionButton = Instance.new("TextButton")
+	sectionButton.Name = name .. "_Button"
+	sectionButton.Text = name
+	sectionButton.Size = UDim2.new(1, -PADDING*2, 0, 30) -- Ширина панели минус отступы
+	sectionButton.BackgroundColor3 = Color3.fromRGB(53, 59, 72) -- Начальный цвет неактивной
+	sectionButton.TextColor3 = Color3.fromRGB(200, 200, 200)
+	sectionButton.Font = Enum.Font.SourceSansSemibold
+	sectionButton.TextSize = 14
+    sectionButton.LayoutOrder = #leftPanel:GetChildren() + 1
+	sectionButton.Parent = leftPanel
+	sectionButtons[name] = sectionButton -- Сохраняем кнопку
 
-	-- Заголовок Секции
-	local sectionHeader = Instance.new("Frame")
-	sectionHeader.Name = "SectionHeader"
-	sectionHeader.Size = UDim2.new(1, 0, 0, sectionHeaderHeight)
-	sectionHeader.BackgroundColor3 = Color3.fromRGB(53, 59, 72) -- Темнее фона окна
-	sectionHeader.BorderColor3 = Color3.fromRGB(113, 128, 147) -- Рамка из оригинала
-	sectionHeader.BorderSizePixel = 1
-	sectionHeader.Parent = sectionFrame
+	-- 2. Создаем фрейм контента в правой панели (скрытый)
+	local contentFrame = Instance.new("Frame")
+	contentFrame.Name = "Content_" .. name
+	contentFrame.Size = UDim2.new(1, 0, 0, 0) -- Ширина 100%, высота авто
+    contentFrame.AutomaticSize = Enum.AutomaticSize.Y -- Авторазмер по высоте
+	contentFrame.BackgroundTransparency = 1.0
+    contentFrame.Position = UDim2.new(0,0,0,0) -- Позиция не важна, будет виден только один
+	contentFrame.Visible = false -- Изначально скрыт
+	contentFrame.Parent = rightPanel -- Внутри СКРОЛЛИНГА правой панели
 
-	local sectionTitle = Instance.new("TextLabel")
-	sectionTitle.Name = "SectionTitle"
-	sectionTitle.Size = UDim2.new(1, -sectionHeaderHeight - PADDING, 1, 0)
-	sectionTitle.Position = UDim2.new(0, PADDING, 0, 0)
-	sectionTitle.BackgroundTransparency = 1.0
-	sectionTitle.Font = Enum.Font.SourceSansSemibold
-	sectionTitle.Text = name
-	sectionTitle.TextColor3 = Color3.fromRGB(245, 246, 250) -- Белый текст
-	sectionTitle.TextSize = 16.000
-	sectionTitle.TextXAlignment = Enum.TextXAlignment.Left
-	sectionTitle.Parent = sectionHeader
+	local contentListLayout = Instance.new("UIListLayout")
+    contentListLayout.Name = "ContentListLayout" -- Даем имя для поиска
+	contentListLayout.Padding = UDim.new(0, PADDING)
+	contentListLayout.FillDirection = Enum.FillDirection.Vertical
+	contentListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+	contentListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	contentListLayout.Parent = contentFrame
+	sectionContentFrames[name] = contentFrame -- Сохраняем фрейм
 
-	-- Кнопка сворачивания секции
-	local sectionToggle = Instance.new("TextButton")
-	sectionToggle.Name = "SectionToggle"
-	sectionToggle.Size = UDim2.new(0, sectionHeaderHeight - PADDING, 0, sectionHeaderHeight - PADDING)
-	sectionToggle.Position = UDim2.new(1, -sectionHeaderHeight, 0, PADDING/2)
-	sectionToggle.AnchorPoint = Vector2.new(1, 0)
-	sectionToggle.BackgroundColor3 = sectionHeader.BackgroundColor3
-	sectionToggle.BorderSizePixel = 0
-	sectionToggle.Font = Enum.Font.SourceSansLight
-	sectionToggle.Text = "-" -- Начнем с развернутого состояния
-	sectionToggle.TextColor3 = sectionTitle.TextColor3
-	sectionToggle.TextSize = 20.000
-	sectionToggle.Parent = sectionHeader
+    -- Слушаем изменение размера для обновления CanvasSize
+    local contentSizeConn
+    contentSizeConn = contentListLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+        if contentFrame.Visible then -- Обновляем только если секция видима
+           task.defer(updateRightPanelCanvasSize)
+        end
+    end)
+    contentFrame.Destroying:Connect(function()
+        if contentSizeConn then contentSizeConn:Disconnect() end
+    end)
 
-	-- Контейнер для содержимого секции
-	local sectionContent = Instance.new("Frame")
-	sectionContent.Name = "SectionContent"
-	sectionContent.Size = UDim2.new(1, 0, 0, PADDING) -- Начнем с минимальной высоты (только отступ)
-    sectionContent.AutomaticSize = Enum.AutomaticSize.Y -- Ключевой момент: авторазмер по Y
-	sectionContent.Position = UDim2.new(0, 0, 0, sectionHeaderHeight)
-	sectionContent.BackgroundTransparency = 1.0 -- Прозрачный фон
-    sectionContent.ClipsDescendants = true -- Обрезать содержимое, если нужно
-	sectionContent.Visible = true -- По умолчанию развернута
-	sectionContent.Parent = sectionFrame
-
-    local contentListLayout = Instance.new("UIListLayout")
-    contentListLayout.Padding = UDim.new(0, PADDING)
-    contentListLayout.FillDirection = Enum.FillDirection.Vertical
-    contentListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-    contentListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    contentListLayout.Parent = sectionContent
-
-	-- Инициализация состояния для этой секции
-    sectionVerticalOffsets[sectionContent] = PADDING -- Начинаем с отступа
-    sectionHeights[sectionContent] = PADDING
-
-	-- Логика сворачивания/разворачивания секции
-	sectionToggle.MouseButton1Click:Connect(function()
-		sectionContent.Visible = not sectionContent.Visible
-		if sectionContent.Visible then
-			sectionToggle.Text = "-"
-		else
-			sectionToggle.Text = "+"
-		end
-        -- Обновляем CanvasSize после изменения видимости (может потребоваться wait)
-        RunService.Heartbeat:Wait()
-		updateSectionContainerCanvasSize()
+	-- 3. Назначаем действие на кнопку раздела
+	sectionButton.MouseButton1Click:Connect(function()
+		setActiveSection(name)
 	end)
 
+	-- 4. Если это первая секция, делаем ее активной
+	if activeSectionName == nil then
+		setActiveSection(name)
+	end
+
+    -- 5. Обновляем CanvasSize левой панели (для скролла разделов)
+    RunService.Heartbeat:Wait() -- Даем UIListLayout обновиться
+    leftPanel.CanvasSize = UDim2.new(0,0,0, leftPanelLayout.AbsoluteContentSize.Y + PADDING*2)
 
 	-- Функции для добавления элементов в ЭТУ секцию
 	local sectionFunctions = {}
-	currentSectionContentFrame = sectionContent -- Устанавливаем текущую секцию
 
-    -- Функция-хелпер для добавления элемента и обновления размера
-    local function addElement(elementHeight)
-        --[[ Старая логика расчета сдвигов (уже не нужна из-за UIListLayout и AutomaticSize)
-        local currentOffset = sectionVerticalOffsets[sectionContent] or PADDING
-        sectionVerticalOffsets[sectionContent] = currentOffset + elementHeight + PADDING
-
-        local currentHeight = sectionHeights[sectionContent] or PADDING
-        sectionHeights[sectionContent] = currentHeight + elementHeight + PADDING
-        sectionContent.Size = UDim2.new(1, 0, 0, sectionHeights[sectionContent]) -- Обновляем размер контент-фрейма
-        ]]
-
-        -- Обновляем CanvasSize контейнера секций (после того как элемент добавлен и AutomaticSize сработал)
-        RunService.Heartbeat:Wait() -- Даем время AutomaticSize обновить размер
-        updateSectionContainerCanvasSize()
+    -- Хелпер для обновления CanvasSize после добавления
+    local function elementAddedUpdate()
+        task.defer(updateRightPanelCanvasSize)
     end
 
-
-	function sectionFunctions:Button(name, callback)
-		local name = name or "Button"
+	function sectionFunctions:Button(buttonName, callback)
+		local buttonName = buttonName or "Button"
 		local callback = callback or function() end
-		local elementHeight = 26 -- Высота кнопки
-
+		local elementHeight = 26
 		local Button = Instance.new("TextButton")
-		Button.Name = "Button_" .. name:gsub("%s+", "_") -- Уникальное имя
-		Button.Parent = sectionContent -- Добавляем в контент секции
-		Button.BackgroundColor3 = Color3.fromRGB(53, 59, 72) -- Цвет из оригинала
-		Button.BorderColor3 = Color3.fromRGB(113, 128, 147) -- Цвет из оригинала
-		Button.Size = UDim2.new(1, -PADDING*2, 0, elementHeight) -- Ширина с отступами
+		Button.Name = "Button_" .. buttonName:gsub("%s+", "_")
+		Button.Parent = contentFrame -- <--- ВАЖНО: добавляем в contentFrame секции
+		Button.BackgroundColor3 = Color3.fromRGB(53, 59, 72)
+		Button.BorderColor3 = Color3.fromRGB(113, 128, 147)
+		Button.Size = UDim2.new(1, -PADDING*2, 0, elementHeight) -- Ширина контента минус отступы
 		Button.Font = Enum.Font.SourceSans
-		Button.TextColor3 = Color3.fromRGB(245, 246, 250) -- Цвет из оригинала
+		Button.TextColor3 = Color3.fromRGB(245, 246, 250)
 		Button.TextSize = 16.000
 		Button.TextWrapped = true
-		Button.Text = name
-		Button.MouseButton1Down:Connect(callback) -- Используем MouseButton1Down как в оригинале
-
-        addElement(elementHeight) -- Обновляем размеры
-		return Button -- Возвращаем кнопку, если нужно
+		Button.Text = buttonName
+		Button.MouseButton1Down:Connect(callback)
+        elementAddedUpdate()
+		return Button
 	end
 
 	function sectionFunctions:Label(text, color)
-        local text = text or "Label"
-		local color = color or Color3.fromRGB(220, 221, 225) -- Цвет из оригинала
-        local elementHeight = 29 -- Высота лейбла
-
-		local Label = Instance.new("TextLabel")
+		local text = text or "Label"
+		local color = color or Color3.fromRGB(220, 221, 225)
+        local Label = Instance.new("TextLabel")
 		Label.Name = "Label_" .. text:gsub("%s+", "_")
-		Label.Parent = sectionContent
+		Label.Parent = contentFrame -- <--- ВАЖНО
 		Label.BackgroundTransparency = 1.000
-        Label.Size = UDim2.new(1, -PADDING*2, 0, elementHeight) -- Ширина с отступами
-        Label.Font = Enum.Font.SourceSans
+		Label.Size = UDim2.new(1, -PADDING*2, 0, 0) -- Ширина контента минус отступы, высота авто
+        Label.AutomaticSize = Enum.AutomaticSize.Y
+		Label.Font = Enum.Font.SourceSans
 		Label.Text = text
 		Label.TextSize = 16.000
-        Label.TextXAlignment = Enum.TextXAlignment.Left -- Выравнивание по левому краю
-        Label.TextWrapped = true -- На случай длинного текста
+		Label.TextXAlignment = Enum.TextXAlignment.Left
+		Label.TextWrapped = true
+        Label.TextColor3 = (type(color) == "boolean" and color) and Color3.new(1,1,1) or color -- Упростим для примера
 
-		if type(color) == "boolean" and color then -- Радужный текст
+		if type(color) == "boolean" and color then
 			task.spawn(function()
-                while Label and Label.Parent do -- Проверяем существование лейбла
+                while Label and Label.Parent do
 					local hue = tick() % 5 / 5
 					Label.TextColor3 = Color3.fromHSV(hue, 1, 1)
 					RunService.Heartbeat:Wait()
 				end
 			end)
-		else
-			Label.TextColor3 = color
 		end
-
-        addElement(elementHeight)
+        elementAddedUpdate()
 		return Label
 	end
 
     function sectionFunctions:Toggle(text, defaultState, callback)
-        local text = text or "Toggle"
+		local text = text or "Toggle"
 		local callback = callback or function() end
-        local currentState = defaultState or false
-        local elementHeight = 26
+		local currentState = defaultState or false
+		local elementHeight = 26
+		local ToggleFrame = Instance.new("Frame")
+		ToggleFrame.Name = "ToggleFrame_" .. text:gsub("%s+", "_")
+		ToggleFrame.Size = UDim2.new(1, -PADDING*2, 0, elementHeight)
+		ToggleFrame.BackgroundTransparency = 1.0
+		ToggleFrame.Parent = contentFrame -- <--- ВАЖНО
+		local ToggleDescription = Instance.new("TextLabel")
+        -- (Остальная логика Toggle как раньше, но Parent = ToggleFrame)
+		ToggleDescription.Name = "ToggleDescription"
+		ToggleDescription.Parent = ToggleFrame
+		ToggleDescription.Size = UDim2.new(1, -elementHeight - PADDING, 1, 0)
+		ToggleDescription.BackgroundTransparency = 1.000
+		ToggleDescription.Font = Enum.Font.SourceSans
+		ToggleDescription.Text = text
+		ToggleDescription.TextColor3 = Color3.fromRGB(245, 246, 250)
+		ToggleDescription.TextSize = 16.000
+		ToggleDescription.TextWrapped = true
+		ToggleDescription.TextXAlignment = Enum.TextXAlignment.Left
+		local ToggleButton = Instance.new("TextButton")
+		ToggleButton.Name = "ToggleButton"
+		ToggleButton.Parent = ToggleFrame
+		ToggleButton.Size = UDim2.new(0, elementHeight - PADDING, 0, elementHeight - PADDING)
+		ToggleButton.Position = UDim2.new(1, -elementHeight + PADDING/2, 0, PADDING/2)
+		ToggleButton.AnchorPoint = Vector2.new(1, 0)
+		ToggleButton.BackgroundColor3 = Color3.fromRGB(47, 54, 64)
+		ToggleButton.BorderColor3 = Color3.fromRGB(113, 128, 147)
+		ToggleButton.BorderSizePixel = 1
+		ToggleButton.Text = ""
+		local ToggleFiller = Instance.new("Frame")
+		ToggleFiller.Name = "ToggleFiller"
+		ToggleFiller.Parent = ToggleButton
+		ToggleFiller.BackgroundColor3 = Color3.fromRGB(68, 189, 50)
+		ToggleFiller.BorderColor3 = Color3.fromRGB(47, 54, 64)
+		ToggleFiller.Position = UDim2.new(0, PADDING/2, 0, PADDING/2)
+		ToggleFiller.Size = UDim2.new(1, -PADDING, 1, -PADDING)
+		ToggleFiller.Visible = currentState
+		ToggleButton.MouseButton1Click:Connect(function()
+			currentState = not currentState
+			ToggleFiller.Visible = currentState
+			pcall(callback, currentState)
+		end)
+        elementAddedUpdate()
+		return ToggleFrame
+	end
 
-        local ToggleFrame = Instance.new("Frame")
-        ToggleFrame.Name = "ToggleFrame_" .. text:gsub("%s+", "_")
-        ToggleFrame.Size = UDim2.new(1, -PADDING*2, 0, elementHeight)
-        ToggleFrame.BackgroundTransparency = 1.0
-        ToggleFrame.Parent = sectionContent
+    --[[ TODO: Добавить остальные элементы (Slider, Dropdown, etc.),
+             убедившись, что они добавляются в 'contentFrame'
+             и вызывают elementAddedUpdate() ]]
 
-        local ToggleDescription = Instance.new("TextLabel")
-        ToggleDescription.Name = "ToggleDescription"
-        ToggleDescription.Parent = ToggleFrame
-        ToggleDescription.Size = UDim2.new(1, -elementHeight - PADDING, 1, 0) -- Место для кнопки
-        ToggleDescription.BackgroundTransparency = 1.000
-        ToggleDescription.Font = Enum.Font.SourceSans
-        ToggleDescription.Text = text
-        ToggleDescription.TextColor3 = Color3.fromRGB(245, 246, 250)
-        ToggleDescription.TextSize = 16.000
-        ToggleDescription.TextWrapped = true
-        ToggleDescription.TextXAlignment = Enum.TextXAlignment.Left
-
-        local ToggleButton = Instance.new("TextButton")
-        ToggleButton.Name = "ToggleButton"
-        ToggleButton.Parent = ToggleFrame
-        ToggleButton.Size = UDim2.new(0, elementHeight, 0, elementHeight)
-        ToggleButton.Position = UDim2.new(1, -elementHeight, 0, 0)
-        ToggleButton.AnchorPoint = Vector2.new(1, 0)
-        ToggleButton.BackgroundColor3 = Color3.fromRGB(47, 54, 64)
-        ToggleButton.BorderColor3 = Color3.fromRGB(113, 128, 147)
-        ToggleButton.Text = ""
-
-        local ToggleFiller = Instance.new("Frame")
-        ToggleFiller.Name = "ToggleFiller"
-        ToggleFiller.Parent = ToggleButton
-        ToggleFiller.BackgroundColor3 = Color3.fromRGB(68, 189, 50) -- Зеленый
-        ToggleFiller.BorderColor3 = Color3.fromRGB(47, 54, 64)
-        ToggleFiller.Position = UDim2.new(0, PADDING, 0, PADDING)
-        ToggleFiller.Size = UDim2.new(1, -PADDING*2, 1, -PADDING*2) -- Занимает почти всю кнопку с отступами
-        ToggleFiller.Visible = currentState
-
-        ToggleButton.MouseButton1Click:Connect(function()
-            currentState = not currentState
-            ToggleFiller.Visible = currentState
-            pcall(callback, currentState) -- Безопасный вызов callback
-        end)
-
-        addElement(elementHeight)
-        return ToggleFrame -- Возвращаем фрейм для возможного управления
-    end
-
-    --[[ TODO: Добавить другие элементы управления (Box, Slider, Dropdown, ColorPicker),
-             адаптировав их для работы с контентом секции и новой системой размеров.
-             Это потребует значительной переработки их логики позиционирования и изменения размера.
-             Пока оставим только Button, Label, Toggle для демонстрации.
-    ]]
-
-	-- Возвращаем таблицу с функциями для этой секции
 	return sectionFunctions
 end
 
 function library:Destroy()
+	-- (Функция Destroy остается без изменений)
 	if screenGui then
 		screenGui:Destroy()
 		screenGui = nil
 		mainPanel = nil
-		sectionContainer = nil
-        sectionListLayout = nil
-		currentSectionContentFrame = nil
-		sectionVerticalOffsets = {}
-        sectionHeights = {}
+        mainContentArea = nil
+        leftPanel = nil
+        rightPanel = nil
+        leftPanelLayout = nil
+		sectionButtons = {}
+        sectionContentFrames = {}
+        activeSectionName = nil
 		if dragConnection then dragConnection:Disconnect(); dragConnection = nil end
-        print("TurtleUiLib_SectionBased Destroyed.")
+        if keybindConnection then keybindConnection:Disconnect(); keybindConnection = nil end
+		print("TurtleUiLib_TwoPanel Destroyed.")
 	end
-    -- Отключаем Keybind, если он был
-    if keybindConnection then keybindConnection:Disconnect(); keybindConnection = nil end
 end
 
--- Скрытие/Показ всей панели
 local keybindConnection = nil
 function library:Hide()
+	-- (Функция Hide остается без изменений)
 	if screenGui then
 		screenGui.Enabled = not screenGui.Enabled
 	end
 end
-
--- Установка Keybind для Скрытия/Показа
 function library:Keybind(key)
-	if not UserInputService then return end -- На случай, если сервис не найден
-	if keybindConnection then keybindConnection:Disconnect() end -- Отключаем старый
-
+	-- (Функция Keybind остается без изменений)
+	if not UserInputService then return end
+	if keybindConnection then keybindConnection:Disconnect() end
 	local keyCodeEnum = Enum.KeyCode[key]
-	if not keyCodeEnum then
-		warn("Invalid keybind key:", key)
-		return
-	end
-
+	if not keyCodeEnum then warn("Invalid keybind key:", key); return end
 	keybindConnection = UserInputService.InputBegan:Connect(function(input, gameProcessedEvent)
-		if not gameProcessedEvent and input.KeyCode == keyCodeEnum then
-			library:Hide()
-		end
+		if not gameProcessedEvent and input.KeyCode == keyCodeEnum then library:Hide() end
 	end)
-    print("Keybind set to:", key)
+	print("Keybind set to:", key)
 end
 
--- Возвращаем таблицу библиотеки
 return library
