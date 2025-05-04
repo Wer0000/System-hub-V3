@@ -1,5 +1,6 @@
--- Название: TurtleUiLib_TwoPanel.lua
+-- Название: TurtleUiLib_TwoPanel_Enhanced.lua
 -- Описание: UI-библиотека для создания ОДНОГО окна с левой панелью разделов и правой панелью контента.
+-- Версия: Добавлены Slider, Dropdown, ColorPicker.
 
 local library = {}
 
@@ -10,285 +11,180 @@ local Players = game:GetService("Players")
 local CoreGui = game:GetService("CoreGui")
 
 local LocalPlayer = Players.LocalPlayer
+local mouse = LocalPlayer:GetMouse() -- Для слайдера и колорпикера
 
 local screenGui = nil
 local mainPanel = nil
 local titleBar = nil
-local mainContentArea = nil -- Фрейм под заголовком, содержащий левую и правую панели
-local leftPanel = nil -- ScrollingFrame для кнопок разделов
-local rightPanel = nil -- ScrollingFrame для контента активного раздела
-local leftPanelLayout = nil -- UIListLayout для кнопок разделов
+local mainContentArea = nil
+local leftPanel = nil
+local rightPanel = nil
+local leftPanelLayout = nil
 
-local sectionButtons = {} -- Хранит кнопки разделов {name = button}
-local sectionContentFrames = {} -- Хранит фреймы контента {name = frame}
-local activeSectionName = nil -- Имя текущего активного раздела
+local sectionButtons = {}
+local sectionContentFrames = {} -- {name = {contentFrame=Frame, listLayout=UIListLayout}}
+local activeSectionName = nil
 
 local isPanelVisible = true
 local PADDING = 5
-local LEFT_PANEL_WIDTH = 100 -- Ширина левой панели
+local LEFT_PANEL_WIDTH = 120 -- Чуть шире для лучшего вида
+local TITLE_BAR_HEIGHT = 30
 
 -- Состояние перетаскивания
 local dragging = false
 local dragInput = nil
 local dragStart = nil
 local startPos = nil
-local dragConnection = nil -- Для RenderStepped
+local dragConnection = nil
+
+-- Управление элементами, требующими закрытия (дропдауны, колорпикеры)
+local closableElements = {} -- Массив функций для закрытия
 
 -- Защита GUI
 local destroyed = false
-if CoreGui:FindFirstChild('TurtleUiLib_TwoPanel') then
-    CoreGui:FindFirstChild('TurtleUiLib_TwoPanel'):Destroy()
+if CoreGui:FindFirstChild('TurtleUiLib_TwoPanel_Enhanced') then
+    CoreGui:FindFirstChild('TurtleUiLib_TwoPanel_Enhanced'):Destroy()
     destroyed = true
 end
 
 local function protect_gui(obj)
-	-- (Функция protect_gui остается без изменений)
-	if destroyed then
-		obj.Parent = CoreGui
-		return
-	end
-	if syn and syn.protect_gui then
-		syn.protect_gui(obj)
-		obj.Parent = CoreGui
-	elseif PROTOSMASHER_LOADED then
-		obj.Parent = get_hidden_gui()
-	else
-		obj.Parent = CoreGui
+	if destroyed then obj.Parent = CoreGui; return end
+	if syn and syn.protect_gui then syn.protect_gui(obj); obj.Parent = CoreGui
+	elseif PROTOSMASHER_LOADED then obj.Parent = get_hidden_gui()
+	else obj.Parent = CoreGui
 	end
 end
 
--- Функция Перетаскивания
+function Lerp(a, b, c) return a + ((b - a) * c) end
+
 local function enableDrag(frame, handle)
-	-- (Функция enableDrag остается почти без изменений, использует RenderStepped)
 	handle = handle or frame
 	if dragConnection then dragConnection:Disconnect(); dragConnection = nil end
-
 	local handleInputBeganConn, handleInputChangedConn, userInputEndedConn
-
 	handleInputBeganConn = handle.InputBegan:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			dragging = true
-			dragStart = input.Position
-			startPos = frame.Position
+			dragging = true; dragStart = input.Position; startPos = frame.Position
 			local changedConn, endedConn
-			changedConn = input.Changed:Connect(function()
-				if input.UserInputState == Enum.UserInputState.End then
-					dragging = false
-					if changedConn then changedConn:Disconnect() end
-					if endedConn then endedConn:Disconnect() end
-				end
-			end)
-			endedConn = UserInputService.InputEnded:Connect(function(endInput)
-				if endInput == input then
-					dragging = false
-					if changedConn then changedConn:Disconnect() end
-					if endedConn then endedConn:Disconnect() end
-				end
-			end)
+			changedConn = input.Changed:Connect(function() if input.UserInputState == Enum.UserInputState.End then dragging = false; if changedConn then changedConn:Disconnect() end if endedConn then endedConn:Disconnect() end end end)
+			endedConn = UserInputService.InputEnded:Connect(function(endInput) if endInput == input then dragging = false; if changedConn then changedConn:Disconnect() end if endedConn then endedConn:Disconnect() end end end)
 		end
 	end)
-	handleInputChangedConn = handle.InputChanged:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-			dragInput = input
-		end
-	end)
+	handleInputChangedConn = handle.InputChanged:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then dragInput = input end end)
 	dragConnection = RunService.RenderStepped:Connect(function()
 		if dragging and dragInput then
-			local currentPos = dragInput.Position
-			local delta = currentPos - dragStart
-			frame.Position = UDim2.new(
-				startPos.X.Scale, startPos.X.Offset + delta.X,
-				startPos.Y.Scale, startPos.Y.Offset + delta.Y
-			)
+			local delta = dragInput.Position - dragStart
+			frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
 		end
 	end)
 end
 
--- Обновление CanvasSize правой панели
+-- Закрывает все "всплывающие" элементы (дропдауны, колорпикеры)
+local function closePopups()
+    for _, closeFunc in ipairs(closableElements) do
+        pcall(closeFunc) -- Вызываем функцию закрытия
+    end
+    closableElements = {} -- Очищаем список
+end
+
 local function updateRightPanelCanvasSize()
 	if not rightPanel or not activeSectionName then return end
-	local contentFrame = sectionContentFrames[activeSectionName]
-	if contentFrame and contentFrame:FindFirstChild("ContentListLayout") then
-		-- Даем время UIListLayout обновиться
+	local sectionData = sectionContentFrames[activeSectionName]
+	if sectionData and sectionData.listLayout then
 		RunService.Heartbeat:Wait()
-		local layout = contentFrame:FindFirstChild("ContentListLayout")
-		rightPanel.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + PADDING * 2)
+		rightPanel.CanvasSize = UDim2.new(0, 0, 0, sectionData.listLayout.AbsoluteContentSize.Y + PADDING * 2)
 	else
 		rightPanel.CanvasSize = UDim2.new(0, 0, 0, 0)
 	end
+    -- Обновление высоты mainPanel, если развернут
+    if isPanelVisible and mainPanel then
+        mainPanel.Size = UDim2.new(mainPanel.Size.X.Scale, mainPanel.Size.X.Offset, 0, TITLE_BAR_HEIGHT + rightPanel.CanvasSize.Y.Offset + PADDING*2)
+    end
 end
 
--- Устанавливает активную секцию
 local function setActiveSection(sectionName)
-	if activeSectionName == sectionName then return end -- Уже активна
-
+	if activeSectionName == sectionName then return end
+    closePopups() -- Закрываем все попапы при смене секции
 	activeSectionName = sectionName
-
-	-- Скрываем все фреймы контента
-	for name, frame in pairs(sectionContentFrames) do
-		frame.Visible = false
-	end
-	-- Показываем нужный фрейм контента
-	if sectionContentFrames[sectionName] then
-		sectionContentFrames[sectionName].Visible = true
-	end
-
-	-- Обновляем вид кнопок разделов (визуальная обратная связь)
+	for name, data in pairs(sectionContentFrames) do data.contentFrame.Visible = (name == sectionName) end
 	for name, button in pairs(sectionButtons) do
-		if name == sectionName then
-			button.BackgroundColor3 = Color3.fromRGB(80, 80, 80) -- Цвет активной кнопки
-			button.TextColor3 = Color3.fromRGB(255, 255, 255)
-		else
-			button.BackgroundColor3 = Color3.fromRGB(53, 59, 72) -- Цвет неактивной кнопки
-            button.TextColor3 = Color3.fromRGB(200, 200, 200)
+		if name == sectionName then button.BackgroundColor3 = Color3.fromRGB(80, 80, 80); button.TextColor3 = Color3.fromRGB(255, 255, 255)
+		else button.BackgroundColor3 = Color3.fromRGB(53, 59, 72); button.TextColor3 = Color3.fromRGB(200, 200, 200)
 		end
 	end
-
-	-- Обновляем скролл правой панели
-	task.defer(updateRightPanelCanvasSize) -- Используем defer для надежности
+	task.defer(updateRightPanelCanvasSize)
 end
 
--- === Публичные Функции Библиотеки ===
-
 function library:Initialize(title, totalWidth, height)
-	if screenGui then
-		warn("Библиотека уже инициализирована.")
-		return library
-	end
-
-	title = title or "UI Library"
-	totalWidth = totalWidth or 450 -- Общая ширина окна
-    height = height or 400 -- Высота окна
-	local titleBarHeight = 30
-    local rightPanelWidth = totalWidth - LEFT_PANEL_WIDTH - PADDING -- Вычисляем ширину правой панели
+	if screenGui then warn("Библиотека уже инициализирована."); return library end
+	title = title or "UI Library"; totalWidth = totalWidth or 450; height = height or 400
+    local rightPanelWidth = totalWidth - LEFT_PANEL_WIDTH - PADDING
 
 	screenGui = Instance.new("ScreenGui")
-	screenGui.Name = "TurtleUiLib_TwoPanel"
-	screenGui.ResetOnSpawn = false
-	screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-	screenGui.DisplayOrder = 1000
+	screenGui.Name = "TurtleUiLib_TwoPanel_Enhanced"; screenGui.ResetOnSpawn = false
+	screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling; screenGui.DisplayOrder = 1000
 
-	mainPanel = Instance.new("Frame")
-	mainPanel.Name = "MainPanel"
-	mainPanel.Size = UDim2.new(0, totalWidth, 0, height)
-	mainPanel.Position = UDim2.new(0, 20, 0, 20)
-	mainPanel.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
-	mainPanel.BorderColor3 = Color3.fromRGB(80, 80, 80)
-	mainPanel.BorderSizePixel = 1
-	mainPanel.Active = true
-	mainPanel.ClipsDescendants = true
-	mainPanel.Parent = screenGui
+	mainPanel = Instance.new("Frame"); mainPanel.Name = "MainPanel"
+	mainPanel.Size = UDim2.new(0, totalWidth, 0, height); mainPanel.Position = UDim2.new(0, 20, 0, 20)
+	mainPanel.BackgroundColor3 = Color3.fromRGB(45, 45, 45); mainPanel.BorderColor3 = Color3.fromRGB(80, 80, 80)
+	mainPanel.BorderSizePixel = 1; mainPanel.Active = true; mainPanel.ClipsDescendants = true; mainPanel.Parent = screenGui
 
-	titleBar = Instance.new("Frame")
-	titleBar.Name = "TitleBar"
-	titleBar.Size = UDim2.new(1, 0, 0, titleBarHeight)
-	titleBar.BackgroundColor3 = Color3.fromRGB(0, 168, 255) -- Цвет из оригинала
-	titleBar.BorderSizePixel = 0
-	titleBar.Parent = mainPanel
+	titleBar = Instance.new("Frame"); titleBar.Name = "TitleBar"
+	titleBar.Size = UDim2.new(1, 0, 0, TITLE_BAR_HEIGHT); titleBar.BackgroundColor3 = Color3.fromRGB(0, 168, 255)
+	titleBar.BorderSizePixel = 0; titleBar.Parent = mainPanel
 
-	local titleLabel = Instance.new("TextLabel")
-	titleLabel.Name = "TitleLabel"
-    titleLabel.Size = UDim2.new(1, -(titleBarHeight * 2) - (PADDING * 2), 1, 0)
-    titleLabel.Position = UDim2.new(0, PADDING, 0, 0)
-    titleLabel.BackgroundTransparency = 1.000
-    titleLabel.Font = Enum.Font.SourceSans
-    titleLabel.Text = title
-    titleLabel.TextColor3 = Color3.fromRGB(47, 54, 64)
-    titleLabel.TextSize = 17.000
-    titleLabel.TextXAlignment = Enum.TextXAlignment.Left
-	titleLabel.Parent = titleBar
+	local titleLabel = Instance.new("TextLabel"); titleLabel.Name = "TitleLabel"
+    titleLabel.Size = UDim2.new(1, -(TITLE_BAR_HEIGHT * 2) - (PADDING * 2), 1, 0); titleLabel.Position = UDim2.new(0, PADDING, 0, 0)
+    titleLabel.BackgroundTransparency = 1.000; titleLabel.Font = Enum.Font.SourceSans
+    titleLabel.Text = title; titleLabel.TextColor3 = Color3.fromRGB(47, 54, 64)
+    titleLabel.TextSize = 17.000; titleLabel.TextXAlignment = Enum.TextXAlignment.Left; titleLabel.Parent = titleBar
 
-	local closeButton = Instance.new("TextButton")
-    -- (Настройки closeButton как раньше)
-	closeButton.Name = "CloseButton"
-	closeButton.Size = UDim2.new(0, titleBarHeight - PADDING * 2, 0, titleBarHeight - PADDING * 2)
-	closeButton.Position = UDim2.new(1, -titleBarHeight + PADDING, 0, PADDING)
-	closeButton.AnchorPoint = Vector2.new(1, 0)
-	closeButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
-	closeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-	closeButton.Font = Enum.Font.SourceSansBold
-	closeButton.Text = "X"
-	closeButton.TextSize = 14
-	closeButton.ZIndex = titleBar.ZIndex + 1
-	closeButton.Parent = titleBar
-	closeButton.MouseButton1Click:Connect(function() library:Destroy() end)
+	local closeButton = Instance.new("TextButton"); closeButton.Name = "CloseButton"
+	closeButton.Size = UDim2.new(0, TITLE_BAR_HEIGHT - PADDING * 2, 0, TITLE_BAR_HEIGHT - PADDING * 2); closeButton.Position = UDim2.new(1, -TITLE_BAR_HEIGHT + PADDING, 0, PADDING)
+	closeButton.AnchorPoint = Vector2.new(1, 0); closeButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+	closeButton.TextColor3 = Color3.fromRGB(255, 255, 255); closeButton.Font = Enum.Font.SourceSansBold
+	closeButton.Text = "X"; closeButton.TextSize = 14; closeButton.ZIndex = titleBar.ZIndex + 1
+	closeButton.Parent = titleBar; closeButton.MouseButton1Click:Connect(function() library:Destroy() end)
 
-	local minimizeButton = Instance.new("TextButton")
-    -- (Настройки minimizeButton как раньше)
-	minimizeButton.Name = "MinimizeButton"
-	minimizeButton.Size = UDim2.new(0, titleBarHeight - PADDING * 2, 0, titleBarHeight - PADDING * 2)
-	minimizeButton.Position = UDim2.new(1, -(titleBarHeight * 2) + PADDING, 0, PADDING)
-	minimizeButton.AnchorPoint = Vector2.new(1, 0)
-	minimizeButton.BackgroundColor3 = Color3.fromRGB(0, 168, 255)
-	minimizeButton.BorderColor3 = Color3.fromRGB(0, 168, 255)
-	minimizeButton.TextColor3 = Color3.fromRGB(0, 0, 0)
-	minimizeButton.Font = Enum.Font.SourceSansLight
-	minimizeButton.Text = "_"
-	minimizeButton.TextSize = 20.000
-	minimizeButton.ZIndex = titleBar.ZIndex + 1
-	minimizeButton.Parent = titleBar
+	local minimizeButton = Instance.new("TextButton"); minimizeButton.Name = "MinimizeButton"
+	minimizeButton.Size = UDim2.new(0, TITLE_BAR_HEIGHT - PADDING * 2, 0, TITLE_BAR_HEIGHT - PADDING * 2); minimizeButton.Position = UDim2.new(1, -(TITLE_BAR_HEIGHT * 2) + PADDING, 0, PADDING)
+	minimizeButton.AnchorPoint = Vector2.new(1, 0); minimizeButton.BackgroundColor3 = Color3.fromRGB(0, 168, 255)
+	minimizeButton.BorderColor3 = Color3.fromRGB(0, 168, 255); minimizeButton.TextColor3 = Color3.fromRGB(0, 0, 0)
+	minimizeButton.Font = Enum.Font.SourceSansLight; minimizeButton.Text = "_"; minimizeButton.TextSize = 20.000
+	minimizeButton.ZIndex = titleBar.ZIndex + 1; minimizeButton.Parent = titleBar
 
-    -- Фрейм для левой и правой панелей
-    mainContentArea = Instance.new("Frame")
-    mainContentArea.Name = "MainContentArea"
-    mainContentArea.Size = UDim2.new(1, 0, 1, -titleBarHeight) -- Занимает все под заголовком
-    mainContentArea.Position = UDim2.new(0, 0, 0, titleBarHeight)
-    mainContentArea.BackgroundTransparency = 1.0
-    mainContentArea.BorderSizePixel = 0
-    mainContentArea.ClipsDescendants = true
-    mainContentArea.Visible = isPanelVisible
-    mainContentArea.Parent = mainPanel
+    mainContentArea = Instance.new("Frame"); mainContentArea.Name = "MainContentArea"
+    mainContentArea.Size = UDim2.new(1, 0, 1, -TITLE_BAR_HEIGHT); mainContentArea.Position = UDim2.new(0, 0, 0, TITLE_BAR_HEIGHT)
+    mainContentArea.BackgroundTransparency = 1.0; mainContentArea.BorderSizePixel = 0; mainContentArea.ClipsDescendants = true
+    mainContentArea.Visible = isPanelVisible; mainContentArea.Parent = mainPanel
 
-	-- Левая Панель (Список Разделов)
-	leftPanel = Instance.new("ScrollingFrame")
-	leftPanel.Name = "LeftPanel"
-	leftPanel.Size = UDim2.new(0, LEFT_PANEL_WIDTH, 1, 0) -- Фиксированная ширина, высота 100%
-	leftPanel.Position = UDim2.new(0, 0, 0, 0)
-	leftPanel.BackgroundColor3 = Color3.fromRGB(50, 50, 50) -- Цвет фона левой панели
-	leftPanel.BorderColor3 = Color3.fromRGB(80, 80, 80)
-    leftPanel.BorderSizePixel = 1
-	leftPanel.ScrollBarThickness = 4
-    leftPanel.CanvasSize = UDim2.new(0, 0, 0, 0) -- Авторасчет по контенту
-    leftPanel.ScrollingDirection = Enum.ScrollingDirection.Y
-	leftPanel.Parent = mainContentArea
+	leftPanel = Instance.new("ScrollingFrame"); leftPanel.Name = "LeftPanel"
+	leftPanel.Size = UDim2.new(0, LEFT_PANEL_WIDTH, 1, 0); leftPanel.Position = UDim2.new(0, 0, 0, 0)
+	leftPanel.BackgroundColor3 = Color3.fromRGB(50, 50, 50); leftPanel.BorderColor3 = Color3.fromRGB(80, 80, 80)
+    leftPanel.BorderSizePixel = 1; leftPanel.ScrollBarThickness = 4; leftPanel.CanvasSize = UDim2.new(0, 0, 0, 0)
+    leftPanel.ScrollingDirection = Enum.ScrollingDirection.Y; leftPanel.Parent = mainContentArea
 
-	leftPanelLayout = Instance.new("UIListLayout")
-	leftPanelLayout.Padding = UDim.new(0, PADDING)
-	leftPanelLayout.FillDirection = Enum.FillDirection.Vertical
-	leftPanelLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-	leftPanelLayout.SortOrder = Enum.SortOrder.LayoutOrder
-	leftPanelLayout.Parent = leftPanel
+	leftPanelLayout = Instance.new("UIListLayout"); leftPanelLayout.Padding = UDim.new(0, PADDING)
+	leftPanelLayout.FillDirection = Enum.FillDirection.Vertical; leftPanelLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+	leftPanelLayout.SortOrder = Enum.SortOrder.LayoutOrder; leftPanelLayout.Parent = leftPanel
 
-	-- Правая Панель (Контент Раздела)
-	rightPanel = Instance.new("ScrollingFrame")
-	rightPanel.Name = "RightPanel"
-	rightPanel.Size = UDim2.new(0, rightPanelWidth, 1, 0) -- Ширина вычислена, высота 100%
-	rightPanel.Position = UDim2.new(0, LEFT_PANEL_WIDTH + PADDING, 0, 0) -- Правее левой панели с отступом
-	rightPanel.BackgroundColor3 = Color3.fromRGB(47, 54, 64) -- Цвет фона контента
-	rightPanel.BorderColor3 = Color3.fromRGB(80, 80, 80)
-    rightPanel.BorderSizePixel = 1
-	rightPanel.ScrollBarThickness = 6
-	rightPanel.CanvasSize = UDim2.new(0, 0, 0, 0) -- Будет меняться
-    rightPanel.ScrollingDirection = Enum.ScrollingDirection.Y
-	rightPanel.Parent = mainContentArea
+	rightPanel = Instance.new("ScrollingFrame"); rightPanel.Name = "RightPanel"
+	rightPanel.Size = UDim2.new(1, -LEFT_PANEL_WIDTH - PADDING, 1, 0) -- ИЗМЕНЕНО: Используем 100% ширины минус левая панель и отступ
+	rightPanel.Position = UDim2.new(0, LEFT_PANEL_WIDTH + PADDING, 0, 0); rightPanel.BackgroundColor3 = Color3.fromRGB(47, 54, 64)
+	rightPanel.BorderColor3 = Color3.fromRGB(80, 80, 80); rightPanel.BorderSizePixel = 1; rightPanel.ScrollBarThickness = 6
+	rightPanel.CanvasSize = UDim2.new(0, 0, 0, 0); rightPanel.ScrollingDirection = Enum.ScrollingDirection.Y; rightPanel.Parent = mainContentArea
 
-	-- Логика сворачивания/разворачивания всей панели
 	minimizeButton.MouseButton1Click:Connect(function()
-		isPanelVisible = not isPanelVisible
-		mainContentArea.Visible = isPanelVisible
-		if isPanelVisible then
-			minimizeButton.Text = "_"
+		isPanelVisible = not isPanelVisible; mainContentArea.Visible = isPanelVisible
+		if isPanelVisible then minimizeButton.Text = "_"
             mainPanel:TweenSize(UDim2.new(0, totalWidth, 0, height), Enum.EasingDirection.Out, Enum.EasingStyle.Quad, 0.2, true)
-		else
-			minimizeButton.Text = "+"
-            mainPanel:TweenSize(UDim2.new(0, totalWidth, 0, titleBarHeight), Enum.EasingDirection.Out, Enum.EasingStyle.Quad, 0.2, true)
+		else minimizeButton.Text = "+"
+            mainPanel:TweenSize(UDim2.new(0, totalWidth, 0, TITLE_BAR_HEIGHT), Enum.EasingDirection.Out, Enum.EasingStyle.Quad, 0.2, true)
 		end
 	end)
 
 	enableDrag(mainPanel, titleBar)
 	protect_gui(screenGui)
-
-	print("TurtleUiLib_TwoPanel Initialized.")
+	print("TurtleUiLib_TwoPanel_Enhanced Initialized.")
 	return library
 end
 
@@ -296,211 +192,384 @@ function library:AddSection(name)
 	if not screenGui then warn("Библиотека не инициализирована."); return end
 	name = name or "Section"
 
-	-- 1. Создаем кнопку в левой панели
-	local sectionButton = Instance.new("TextButton")
-	sectionButton.Name = name .. "_Button"
-	sectionButton.Text = name
-	sectionButton.Size = UDim2.new(1, -PADDING*2, 0, 30) -- Ширина панели минус отступы
-	sectionButton.BackgroundColor3 = Color3.fromRGB(53, 59, 72) -- Начальный цвет неактивной
-	sectionButton.TextColor3 = Color3.fromRGB(200, 200, 200)
-	sectionButton.Font = Enum.Font.SourceSansSemibold
-	sectionButton.TextSize = 14
-    sectionButton.LayoutOrder = #leftPanel:GetChildren() + 1
-	sectionButton.Parent = leftPanel
-	sectionButtons[name] = sectionButton -- Сохраняем кнопку
+	local sectionButton = Instance.new("TextButton"); sectionButton.Name = name .. "_Button"
+	sectionButton.Text = name; sectionButton.Size = UDim2.new(1, -PADDING*2, 0, 30)
+	sectionButton.BackgroundColor3 = Color3.fromRGB(53, 59, 72); sectionButton.TextColor3 = Color3.fromRGB(200, 200, 200)
+	sectionButton.Font = Enum.Font.SourceSansSemibold; sectionButton.TextSize = 14
+    sectionButton.LayoutOrder = #leftPanel:GetChildren() + 1; sectionButton.Parent = leftPanel
+	sectionButtons[name] = sectionButton
 
-	-- 2. Создаем фрейм контента в правой панели (скрытый)
-	local contentFrame = Instance.new("Frame")
-	contentFrame.Name = "Content_" .. name
-	contentFrame.Size = UDim2.new(1, 0, 0, 0) -- Ширина 100%, высота авто
-    contentFrame.AutomaticSize = Enum.AutomaticSize.Y -- Авторазмер по высоте
-	contentFrame.BackgroundTransparency = 1.0
-    contentFrame.Position = UDim2.new(0,0,0,0) -- Позиция не важна, будет виден только один
-	contentFrame.Visible = false -- Изначально скрыт
-	contentFrame.Parent = rightPanel -- Внутри СКРОЛЛИНГА правой панели
+	local contentFrame = Instance.new("Frame"); contentFrame.Name = "Content_" .. name
+	contentFrame.Size = UDim2.new(1, 0, 0, 0); contentFrame.AutomaticSize = Enum.AutomaticSize.Y
+	contentFrame.BackgroundTransparency = 1.0; contentFrame.Position = UDim2.new(0,0,0,0)
+	contentFrame.Visible = false; contentFrame.Parent = rightPanel
 
-	local contentListLayout = Instance.new("UIListLayout")
-    contentListLayout.Name = "ContentListLayout" -- Даем имя для поиска
-	contentListLayout.Padding = UDim.new(0, PADDING)
-	contentListLayout.FillDirection = Enum.FillDirection.Vertical
-	contentListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-	contentListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	local contentListLayout = Instance.new("UIListLayout"); contentListLayout.Name = "ContentListLayout"
+	contentListLayout.Padding = UDim.new(0, PADDING); contentListLayout.FillDirection = Enum.FillDirection.Vertical
+	contentListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center; contentListLayout.SortOrder = Enum.SortOrder.LayoutOrder
 	contentListLayout.Parent = contentFrame
-	sectionContentFrames[name] = contentFrame -- Сохраняем фрейм
+	sectionContentFrames[name] = {contentFrame = contentFrame, listLayout = contentListLayout} -- Сохраняем фрейм и лейаут
 
-    -- Слушаем изменение размера для обновления CanvasSize
     local contentSizeConn
-    contentSizeConn = contentListLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-        if contentFrame.Visible then -- Обновляем только если секция видима
-           task.defer(updateRightPanelCanvasSize)
-        end
-    end)
-    contentFrame.Destroying:Connect(function()
-        if contentSizeConn then contentSizeConn:Disconnect() end
-    end)
+    contentSizeConn = contentListLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function() if contentFrame.Visible then task.defer(updateRightPanelCanvasSize) end end)
+    contentFrame.Destroying:Connect(function() if contentSizeConn then contentSizeConn:Disconnect() end end)
 
-	-- 3. Назначаем действие на кнопку раздела
-	sectionButton.MouseButton1Click:Connect(function()
-		setActiveSection(name)
-	end)
+	sectionButton.MouseButton1Click:Connect(function() setActiveSection(name) end)
 
-	-- 4. Если это первая секция, делаем ее активной
-	if activeSectionName == nil then
-		setActiveSection(name)
-	end
+	if activeSectionName == nil then setActiveSection(name) end
 
-    -- 5. Обновляем CanvasSize левой панели (для скролла разделов)
-    RunService.Heartbeat:Wait() -- Даем UIListLayout обновиться
+    RunService.Heartbeat:Wait()
     leftPanel.CanvasSize = UDim2.new(0,0,0, leftPanelLayout.AbsoluteContentSize.Y + PADDING*2)
 
-	-- Функции для добавления элементов в ЭТУ секцию
 	local sectionFunctions = {}
-
-    -- Хелпер для обновления CanvasSize после добавления
-    local function elementAddedUpdate()
-        task.defer(updateRightPanelCanvasSize)
-    end
+    local function elementAddedUpdate() task.defer(updateRightPanelCanvasSize) end -- Теперь асинхронно
 
 	function sectionFunctions:Button(buttonName, callback)
-		local buttonName = buttonName or "Button"
-		local callback = callback or function() end
-		local elementHeight = 26
-		local Button = Instance.new("TextButton")
-		Button.Name = "Button_" .. buttonName:gsub("%s+", "_")
-		Button.Parent = contentFrame -- <--- ВАЖНО: добавляем в contentFrame секции
-		Button.BackgroundColor3 = Color3.fromRGB(53, 59, 72)
-		Button.BorderColor3 = Color3.fromRGB(113, 128, 147)
-		Button.Size = UDim2.new(1, -PADDING*2, 0, elementHeight) -- Ширина контента минус отступы
-		Button.Font = Enum.Font.SourceSans
-		Button.TextColor3 = Color3.fromRGB(245, 246, 250)
-		Button.TextSize = 16.000
-		Button.TextWrapped = true
-		Button.Text = buttonName
-		Button.MouseButton1Down:Connect(callback)
+		local buttonName = buttonName or "Button"; local callback = callback or function() end
+		local elementHeight = 26; local Button = Instance.new("TextButton")
+		Button.Name = "Button_" .. buttonName:gsub("%s+", "_"); Button.Parent = contentFrame
+		Button.BackgroundColor3 = Color3.fromRGB(53, 59, 72); Button.BorderColor3 = Color3.fromRGB(113, 128, 147)
+		Button.Size = UDim2.new(1, 0, 0, elementHeight); Button.Font = Enum.Font.SourceSans
+		Button.TextColor3 = Color3.fromRGB(245, 246, 250); Button.TextSize = 16.000
+		Button.TextWrapped = true; Button.Text = buttonName; Button.MouseButton1Down:Connect(callback)
         elementAddedUpdate()
 		return Button
 	end
 
 	function sectionFunctions:Label(text, color)
-		local text = text or "Label"
-		local color = color or Color3.fromRGB(220, 221, 225)
-        local Label = Instance.new("TextLabel")
-		Label.Name = "Label_" .. text:gsub("%s+", "_")
-		Label.Parent = contentFrame -- <--- ВАЖНО
-		Label.BackgroundTransparency = 1.000
-		Label.Size = UDim2.new(1, -PADDING*2, 0, 0) -- Ширина контента минус отступы, высота авто
-        Label.AutomaticSize = Enum.AutomaticSize.Y
-		Label.Font = Enum.Font.SourceSans
-		Label.Text = text
-		Label.TextSize = 16.000
-		Label.TextXAlignment = Enum.TextXAlignment.Left
-		Label.TextWrapped = true
-        Label.TextColor3 = (type(color) == "boolean" and color) and Color3.new(1,1,1) or color -- Упростим для примера
-
-		if type(color) == "boolean" and color then
-			task.spawn(function()
-                while Label and Label.Parent do
-					local hue = tick() % 5 / 5
-					Label.TextColor3 = Color3.fromHSV(hue, 1, 1)
-					RunService.Heartbeat:Wait()
-				end
-			end)
-		end
+		local text = text or "Label"; local color = color or Color3.fromRGB(220, 221, 225)
+        local Label = Instance.new("TextLabel"); Label.Name = "Label_" .. text:gsub("%s+", "_")
+		Label.Parent = contentFrame; Label.BackgroundTransparency = 1.000
+		Label.Size = UDim2.new(1, 0, 0, 0); Label.AutomaticSize = Enum.AutomaticSize.Y
+		Label.Font = Enum.Font.SourceSans; Label.Text = text; Label.TextSize = 16.000
+		Label.TextXAlignment = Enum.TextXAlignment.Left; Label.TextWrapped = true
+        Label.TextColor3 = (type(color) == "boolean" and color) and Color3.new(1,1,1) or color
+		if type(color) == "boolean" and color then task.spawn(function() while Label and Label.Parent do Label.TextColor3 = Color3.fromHSV(tick() % 5 / 5, 1, 1); RunService.Heartbeat:Wait() end end) end
         elementAddedUpdate()
 		return Label
 	end
 
     function sectionFunctions:Toggle(text, defaultState, callback)
-		local text = text or "Toggle"
-		local callback = callback or function() end
-		local currentState = defaultState or false
-		local elementHeight = 26
-		local ToggleFrame = Instance.new("Frame")
-		ToggleFrame.Name = "ToggleFrame_" .. text:gsub("%s+", "_")
-		ToggleFrame.Size = UDim2.new(1, -PADDING*2, 0, elementHeight)
-		ToggleFrame.BackgroundTransparency = 1.0
-		ToggleFrame.Parent = contentFrame -- <--- ВАЖНО
-		local ToggleDescription = Instance.new("TextLabel")
-        -- (Остальная логика Toggle как раньше, но Parent = ToggleFrame)
-		ToggleDescription.Name = "ToggleDescription"
-		ToggleDescription.Parent = ToggleFrame
-		ToggleDescription.Size = UDim2.new(1, -elementHeight - PADDING, 1, 0)
-		ToggleDescription.BackgroundTransparency = 1.000
-		ToggleDescription.Font = Enum.Font.SourceSans
-		ToggleDescription.Text = text
-		ToggleDescription.TextColor3 = Color3.fromRGB(245, 246, 250)
-		ToggleDescription.TextSize = 16.000
-		ToggleDescription.TextWrapped = true
-		ToggleDescription.TextXAlignment = Enum.TextXAlignment.Left
-		local ToggleButton = Instance.new("TextButton")
-		ToggleButton.Name = "ToggleButton"
-		ToggleButton.Parent = ToggleFrame
-		ToggleButton.Size = UDim2.new(0, elementHeight - PADDING, 0, elementHeight - PADDING)
-		ToggleButton.Position = UDim2.new(1, -elementHeight + PADDING/2, 0, PADDING/2)
-		ToggleButton.AnchorPoint = Vector2.new(1, 0)
-		ToggleButton.BackgroundColor3 = Color3.fromRGB(47, 54, 64)
-		ToggleButton.BorderColor3 = Color3.fromRGB(113, 128, 147)
-		ToggleButton.BorderSizePixel = 1
-		ToggleButton.Text = ""
-		local ToggleFiller = Instance.new("Frame")
-		ToggleFiller.Name = "ToggleFiller"
-		ToggleFiller.Parent = ToggleButton
-		ToggleFiller.BackgroundColor3 = Color3.fromRGB(68, 189, 50)
-		ToggleFiller.BorderColor3 = Color3.fromRGB(47, 54, 64)
-		ToggleFiller.Position = UDim2.new(0, PADDING/2, 0, PADDING/2)
-		ToggleFiller.Size = UDim2.new(1, -PADDING, 1, -PADDING)
-		ToggleFiller.Visible = currentState
-		ToggleButton.MouseButton1Click:Connect(function()
-			currentState = not currentState
-			ToggleFiller.Visible = currentState
-			pcall(callback, currentState)
-		end)
+		local text = text or "Toggle"; local callback = callback or function() end
+		local currentState = defaultState or false; local elementHeight = 26
+		local ToggleFrame = Instance.new("Frame"); ToggleFrame.Name = "ToggleFrame_" .. text:gsub("%s+", "_")
+		ToggleFrame.Size = UDim2.new(1, 0, 0, elementHeight); ToggleFrame.BackgroundTransparency = 1.0
+		ToggleFrame.Parent = contentFrame
+		local ToggleDescription = Instance.new("TextLabel"); ToggleDescription.Name = "ToggleDescription"
+		ToggleDescription.Parent = ToggleFrame; ToggleDescription.Size = UDim2.new(1, -elementHeight - PADDING, 1, 0)
+		ToggleDescription.BackgroundTransparency = 1.000; ToggleDescription.Font = Enum.Font.SourceSans
+		ToggleDescription.Text = text; ToggleDescription.TextColor3 = Color3.fromRGB(245, 246, 250)
+		ToggleDescription.TextSize = 16.000; ToggleDescription.TextWrapped = true; ToggleDescription.TextXAlignment = Enum.TextXAlignment.Left
+		local ToggleButton = Instance.new("TextButton"); ToggleButton.Name = "ToggleButton"
+		ToggleButton.Parent = ToggleFrame; ToggleButton.Size = UDim2.new(0, elementHeight - PADDING, 0, elementHeight - PADDING)
+		ToggleButton.Position = UDim2.new(1, -elementHeight + PADDING/2, 0, PADDING/2); ToggleButton.AnchorPoint = Vector2.new(1, 0)
+		ToggleButton.BackgroundColor3 = Color3.fromRGB(47, 54, 64); ToggleButton.BorderColor3 = Color3.fromRGB(113, 128, 147)
+		ToggleButton.BorderSizePixel = 1; ToggleButton.Text = ""
+		local ToggleFiller = Instance.new("Frame"); ToggleFiller.Name = "ToggleFiller"
+		ToggleFiller.Parent = ToggleButton; ToggleFiller.BackgroundColor3 = Color3.fromRGB(68, 189, 50)
+		ToggleFiller.BorderColor3 = Color3.fromRGB(47, 54, 64); ToggleFiller.Position = UDim2.new(0, PADDING/2, 0, PADDING/2)
+		ToggleFiller.Size = UDim2.new(1, -PADDING, 1, -PADDING); ToggleFiller.Visible = currentState
+		ToggleButton.MouseButton1Click:Connect(function() currentState = not currentState; ToggleFiller.Visible = currentState; pcall(callback, currentState) end)
         elementAddedUpdate()
 		return ToggleFrame
 	end
 
-    --[[ TODO: Добавить остальные элементы (Slider, Dropdown, etc.),
-             убедившись, что они добавляются в 'contentFrame'
-             и вызывают elementAddedUpdate() ]]
+    function sectionFunctions:Slider(text, min, max, default, callback)
+        local text = text or "Slider"; local min = min or 0; local max = max or 100; local default = math.clamp(default or (min+max)/2, min, max)
+		local callback = callback or function() end
+        local elementHeight = 60 -- Увеличим высоту для слайдера
+        local isDragging = false
+
+        local SliderFrame = Instance.new("Frame"); SliderFrame.Name = "SliderFrame_" .. text:gsub("%s+", "_")
+        SliderFrame.Size = UDim2.new(1, 0, 0, elementHeight); SliderFrame.BackgroundTransparency = 1.0; SliderFrame.Parent = contentFrame
+
+        local Description = Instance.new("TextLabel"); Description.Name = "Description"
+        Description.Parent = SliderFrame; Description.Size = UDim2.new(0.7, -PADDING, 0, 20); Description.Position = UDim2.new(0,0,0,0)
+        Description.BackgroundTransparency = 1.000; Description.Font = Enum.Font.SourceSans; Description.Text = text
+        Description.TextColor3 = Color3.fromRGB(245, 246, 250); Description.TextSize = 16.000; Description.TextXAlignment = Enum.TextXAlignment.Left
+
+        local Current = Instance.new("TextLabel"); Current.Name = "Current"
+        Current.Parent = SliderFrame; Current.Size = UDim2.new(0.3, -PADDING, 0, 20); Current.Position = UDim2.new(0.7, PADDING, 0, 0)
+        Current.BackgroundTransparency = 1.000; Current.Font = Enum.Font.SourceSans; Current.Text = tostring(math.floor(default))
+        Current.TextColor3 = Color3.fromRGB(220, 221, 225); Current.TextSize = 14.000; Current.TextXAlignment = Enum.TextXAlignment.Right
+
+        local Slider = Instance.new("Frame"); Slider.Name = "Slider"; Slider.Parent = SliderFrame
+        Slider.BackgroundColor3 = Color3.fromRGB(47, 54, 64); Slider.BorderColor3 = Color3.fromRGB(113, 128, 147)
+        Slider.Position = UDim2.new(0, PADDING, 0, 25); Slider.Size = UDim2.new(1, -PADDING*2, 0, 8); Slider.BorderSizePixel = 1
+        local sliderCorner = Instance.new("UICorner"); sliderCorner.CornerRadius = UDim.new(0, 3); sliderCorner.Parent = Slider
+
+        local SliderFiller = Instance.new("Frame"); SliderFiller.Name = "Fill"; SliderFiller.Parent = Slider
+        SliderFiller.BackgroundColor3 = Color3.fromRGB(76, 209, 55); SliderFiller.BorderSizePixel = 0
+        local fillCorner = sliderCorner:Clone(); fillCorner.Parent = SliderFiller
+
+        local SliderButton = Instance.new("Frame"); SliderButton.Name = "Dragger"; SliderButton.Parent = Slider
+        SliderButton.BackgroundColor3 = Color3.fromRGB(53, 59, 72); SliderButton.BorderColor3 = Color3.fromRGB(113, 128, 147)
+        SliderButton.Size = UDim2.new(0, 10, 0, 16); SliderButton.Position = UDim2.new(0,0,0,-4); SliderButton.BorderSizePixel = 1
+        local buttonCorner = Instance.new("UICorner"); buttonCorner.CornerRadius = UDim.new(0, 2); buttonCorner.Parent = SliderButton
+
+        local function updateSliderVisuals(value)
+            value = math.clamp(value, min, max)
+            Current.Text = tostring(math.floor(value))
+            local percentage = (value - min) / (max - min)
+            if max == min then percentage = 0 end -- Handle division by zero
+            local sliderWidth = Slider.AbsoluteSize.X
+            local buttonWidth = SliderButton.AbsoluteSize.X
+            local fillWidth = sliderWidth * percentage
+            local buttonX = math.clamp(fillWidth - buttonWidth / 2, 0, sliderWidth - buttonWidth)
+            SliderFiller.Size = UDim2.new(percentage, 0, 1, 0)
+            SliderButton.Position = UDim2.fromOffset(buttonX, SliderButton.Position.Y.Offset)
+        end
+
+        local function handleInput(input)
+            local sliderWidth = Slider.AbsoluteSize.X
+            if sliderWidth <= 0 then return end
+            local relativeX = math.clamp(input.Position.X - Slider.AbsolutePosition.X, 0, sliderWidth)
+            local percentage = relativeX / sliderWidth
+            local newValue = Lerp(min, max, percentage)
+            updateSliderVisuals(newValue)
+            return newValue
+        end
+
+        Slider.InputBegan:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then isDragging = true; handleInput(input); closePopups() end end)
+        SliderButton.InputBegan:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then isDragging = true; handleInput(input); closePopups() end end)
+        UserInputService.InputChanged:Connect(function(input) if isDragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then handleInput(input) end end)
+        UserInputService.InputEnded:Connect(function(input) if isDragging and (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) then isDragging = false; local finalValue = handleInput(input); pcall(callback, math.floor(finalValue)) end end)
+
+        updateSliderVisuals(default) -- Set initial state
+        addElement(elementHeight)
+        local sliderControl = {}
+        function sliderControl:SetValue(value) pcall(updateSliderVisuals, value) end -- Method to set value programmatically
+        return sliderControl
+	end
+
+    function sectionFunctions:Dropdown(text, options, callback, defaultOption)
+        local text = text or "Dropdown"; local options = options or {}; local callback = callback or function() end
+        local elementHeight = 26; local dropdownHeight = 150 -- Max height of dropdown list
+        local isOpen = false
+        local currentSelection = defaultOption or text
+
+        local DropdownButton = Instance.new("TextButton"); DropdownButton.Name = "DropdownButton_" .. text:gsub("%s+", "_")
+        DropdownButton.Size = UDim2.new(1, 0, 0, elementHeight); DropdownButton.BackgroundColor3 = Color3.fromRGB(53, 59, 72)
+        DropdownButton.BorderColor3 = Color3.fromRGB(113, 128, 147); DropdownButton.Font = Enum.Font.SourceSans
+        DropdownButton.Text = currentSelection; DropdownButton.TextColor3 = Color3.fromRGB(245, 246, 250); DropdownButton.TextSize = 16.000
+        DropdownButton.TextXAlignment = Enum.TextXAlignment.Left; DropdownButton.TextWrapped = true; DropdownButton.Parent = contentFrame
+
+        local DropdownArrow = Instance.new("TextLabel"); DropdownArrow.Name = "Arrow"; DropdownArrow.Parent = DropdownButton
+        DropdownArrow.Size = UDim2.new(0, 20, 1, 0); DropdownArrow.Position = UDim2.new(1, -20-PADDING, 0, 0); DropdownArrow.AnchorPoint = Vector2.new(1,0)
+        DropdownArrow.BackgroundTransparency = 1.0; DropdownArrow.Font = Enum.Font.SourceSansBold; DropdownArrow.Text = "▼" -- Down arrow
+        DropdownArrow.TextColor3 = DropdownButton.TextColor3; DropdownArrow.TextSize = 16; DropdownArrow.TextXAlignment = Enum.TextXAlignment.Right
+
+        local DropdownList = Instance.new("ScrollingFrame"); DropdownList.Name = "DropdownList"
+        DropdownList.Size = UDim2.new(0, DropdownButton.AbsoluteSize.X > 0 and DropdownButton.AbsoluteSize.X or 200, 0, 0) -- Initial height 0
+        DropdownList.Position = UDim2.new(DropdownButton.Position.X.Scale, DropdownButton.Position.X.Offset, DropdownButton.Position.Y.Scale, DropdownButton.Position.Y.Offset + elementHeight)
+        DropdownList.BackgroundColor3 = Color3.fromRGB(45, 45, 45); DropdownList.BorderColor3 = Color3.fromRGB(80, 80, 80)
+        DropdownList.BorderSizePixel = 1; DropdownList.Visible = false; DropdownList.ScrollBarThickness = 4
+        DropdownList.CanvasSize = UDim2.new(0,0,0,0); DropdownList.ZIndex = mainPanel.ZIndex + 10 -- Поверх всего
+        DropdownList.Parent = mainPanel -- Parent to mainPanel to draw over everything
+
+        local listLayout = Instance.new("UIListLayout"); listLayout.Padding = UDim.new(0, 2); listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+        listLayout.Parent = DropdownList
+
+        local function closeDropdown()
+            if not isOpen then return end
+            isOpen = false; DropdownList.Visible = false; DropdownArrow.Text = "▼"
+            -- Удаляем из closableElements
+            for i, func in ipairs(closableElements) do if func == closeDropdown then table.remove(closableElements, i); break end end
+        end
+        local function openDropdown()
+            closePopups() -- Закрываем другие
+            isOpen = true; DropdownList.Visible = true; DropdownArrow.Text = "▲"
+            -- Обновляем позицию и размер на случай, если кнопка сдвинулась
+            DropdownList.Position = UDim2.fromOffset(DropdownButton.AbsolutePosition.X, DropdownButton.AbsolutePosition.Y + DropdownButton.AbsoluteSize.Y)
+            DropdownList.Size = UDim2.new(0, DropdownButton.AbsoluteSize.X, 0, math.min(dropdownHeight, listLayout.AbsoluteContentSize.Y + PADDING*2))
+             -- Добавляем функцию закрытия в список
+            table.insert(closableElements, closeDropdown)
+        end
+
+        local dropdownControl = {}
+        function dropdownControl:Clear() for _, item in ipairs(DropdownList:GetChildren()) do if item:IsA("TextButton") then item:Destroy() end end; DropdownList.CanvasSize = UDim2.new(0,0,0,0) end
+        function dropdownControl:Add(optionName)
+            local itemButton = Instance.new("TextButton"); itemButton.Name = optionName
+            itemButton.Size = UDim2.new(1, 0, 0, 22); itemButton.BackgroundColor3 = Color3.fromRGB(53, 59, 72)
+            itemButton.TextColor3 = Color3.fromRGB(220, 220, 220); itemButton.Font = Enum.Font.SourceSans; itemButton.TextSize = 14
+            itemButton.Text = optionName; itemButton.Parent = DropdownList
+            itemButton.MouseButton1Click:Connect(function() currentSelection = optionName; DropdownButton.Text = optionName; closeDropdown(); pcall(callback, optionName) end)
+            RunService.Heartbeat:Wait()
+            DropdownList.CanvasSize = UDim2.new(0,0,0, listLayout.AbsoluteContentSize.Y + PADDING)
+            if isOpen then DropdownList.Size = UDim2.new(0, DropdownButton.AbsoluteSize.X, 0, math.min(dropdownHeight, listLayout.AbsoluteContentSize.Y + PADDING*2)) end -- Обновляем видимый размер
+        end
+         function dropdownControl:Remove(optionName)
+             local item = DropdownList:FindFirstChild(optionName)
+             if item then item:Destroy(); RunService.Heartbeat:Wait(); DropdownList.CanvasSize = UDim2.new(0,0,0, listLayout.AbsoluteContentSize.Y + PADDING)
+                if isOpen then DropdownList.Size = UDim2.new(0, DropdownButton.AbsoluteSize.X, 0, math.min(dropdownHeight, listLayout.AbsoluteContentSize.Y + PADDING*2)) end
+             end
+         end
+         function dropdownControl:Set(textValue) DropdownButton.Text = textValue; currentSelection = textValue end
+
+        DropdownButton.MouseButton1Click:Connect(function() if isOpen then closeDropdown() else openDropdown() end end)
+        for _, opt in ipairs(options) do dropdownControl:Add(opt) end -- Add initial options
+
+        addElement(elementHeight)
+        return dropdownControl
+	end
+
+    function sectionFunctions:ColorPicker(text, defaultColor, callback)
+        local text = text or "Color Picker"; local callback = callback or function() end
+        local currentColor = defaultColor or Color3.fromRGB(0, 168, 255)
+        local isRainbow = (type(defaultColor) == "boolean" and defaultColor)
+        local elementHeight = 26
+        local pickerWidth = 170; local pickerHeight = 200 -- Размер окна пикера
+        local isOpen = false
+        local rainbowConnection = nil
+
+        local PickerButtonFrame = Instance.new("Frame"); PickerButtonFrame.Name = "PickerButtonFrame_" .. text:gsub("%s+", "_")
+        PickerButtonFrame.Size = UDim2.new(1, 0, 0, elementHeight); PickerButtonFrame.BackgroundTransparency = 1.0; PickerButtonFrame.Parent = contentFrame
+
+        local PickerDescription = Instance.new("TextLabel"); PickerDescription.Name = "PickerDescription"
+        PickerDescription.Size = UDim2.new(1, -elementHeight*2 - PADDING, 1, 0); PickerDescription.Position = UDim2.new(0,0,0,0)
+        PickerDescription.BackgroundTransparency = 1.0; PickerDescription.Font = Enum.Font.SourceSans
+        PickerDescription.Text = text; PickerDescription.TextColor3 = Color3.fromRGB(245, 246, 250); PickerDescription.TextSize = 16.000
+        PickerDescription.TextXAlignment = Enum.TextXAlignment.Left; PickerDescription.Parent = PickerButtonFrame
+
+        local ColorDisplay = Instance.new("Frame"); ColorDisplay.Name = "ColorDisplay"
+        ColorDisplay.Size = UDim2.new(0, elementHeight*2, 0, elementHeight - PADDING); ColorDisplay.Position = UDim2.new(1, -elementHeight*2, 0, PADDING/2)
+        ColorDisplay.AnchorPoint = Vector2.new(1,0); ColorDisplay.BackgroundColor3 = currentColor; ColorDisplay.BorderSizePixel = 1
+        ColorDisplay.BorderColor3 = Color3.fromRGB(113, 128, 147); ColorDisplay.Parent = PickerButtonFrame
+        local displayCorner = Instance.new("UICorner"); displayCorner.CornerRadius = UDim.new(0,3); displayCorner.Parent = ColorDisplay
+
+        local PickerFrame = Instance.new("Frame"); PickerFrame.Name = "ColorPickerFrame"
+        PickerFrame.Size = UDim2.new(0, pickerWidth, 0, pickerHeight); PickerFrame.BackgroundColor3 = Color3.fromRGB(47, 54, 64)
+        PickerFrame.BorderColor3 = Color3.fromRGB(80, 80, 80); PickerFrame.BorderSizePixel = 1; PickerFrame.Visible = false
+        PickerFrame.ClipsDescendants = true; PickerFrame.ZIndex = mainPanel.ZIndex + 10; PickerFrame.Parent = mainPanel -- Поверх всего
+
+        -- Internal Picker Elements (Adapted from original TurtleLib)
+        local Title = Instance.new("TextLabel"); Title.Name = "Title"; Title.Parent = PickerFrame; Title.Size = UDim2.new(1, -30, 0, 25); Title.Position = UDim2.new(0,PADDING,0,PADDING/2)
+        Title.BackgroundTransparency = 1; Title.Font = Enum.Font.SourceSansSemibold; Title.Text = text; Title.TextColor3 = Color3.fromRGB(245, 246, 250); Title.TextSize = 14; Title.TextXAlignment = Enum.TextXAlignment.Left
+
+        local ClosePicker = Instance.new("TextButton"); ClosePicker.Name = "ClosePicker"; ClosePicker.Parent = PickerFrame; ClosePicker.Size = UDim2.new(0, 20, 0, 20); ClosePicker.Position = UDim2.new(1, -20-PADDING/2, 0, PADDING/2)
+        ClosePicker.BackgroundColor3 = Color3.fromRGB(200, 50, 50); ClosePicker.TextColor3 = Color3.fromRGB(255, 255, 255); ClosePicker.Font = Enum.Font.SourceSansBold; ClosePicker.Text = "X"; ClosePicker.TextSize = 12; ClosePicker.ZIndex = Title.ZIndex + 1
+
+        local Canvas = Instance.new("Frame"); Canvas.Name = "Canvas"; Canvas.Parent = PickerFrame; Canvas.BackgroundColor3 = Color3.fromRGB(255, 255, 255); Canvas.Position = UDim2.new(0, PADDING, 0, 35); Canvas.Size = UDim2.new(1, -PADDING*2 - 20, 0, 80); Canvas.ZIndex = Title.ZIndex
+        local CanvasGradient = Instance.new("UIGradient"); CanvasGradient.Name = "CanvasGradient"; CanvasGradient.Parent = Canvas; CanvasGradient.Color = ColorSequence.new{ColorSequenceKeypoint.new(0,Color3.new(1,1,1)),ColorSequenceKeypoint.new(1,Color3.new(1,0,0))} -- Default to red hue
+        local BlackOverlay = Instance.new("ImageLabel"); BlackOverlay.Name = "BlackOverlay"; BlackOverlay.Parent = Canvas; BlackOverlay.BackgroundTransparency = 1; BlackOverlay.Size = UDim2.fromScale(1,1); BlackOverlay.Image = "rbxassetid://2674548115"; BlackOverlay.ImageColor3 = Color3.new(0,0,0); BlackOverlay.ScaleType = Enum.ScaleType.Stretch; BlackOverlay.ZIndex = Canvas.ZIndex + 1
+        local Cursor = Instance.new("ImageLabel"); Cursor.Name = "Cursor"; Cursor.Parent = Canvas; Cursor.BackgroundTransparency = 1; Cursor.Size = UDim2.fromOffset(10, 10); Cursor.AnchorPoint = Vector2.new(0.5,0.5); Cursor.Image = "rbxassetid://3926305904"; Cursor.ImageColor3 = Color3.new(1,1,1); Cursor.ZIndex = BlackOverlay.ZIndex + 1
+
+        local HueSlider = Instance.new("Frame"); HueSlider.Name = "HueSlider"; HueSlider.Parent = PickerFrame; HueSlider.BackgroundColor3 = Color3.fromRGB(80, 80, 80); HueSlider.Position = UDim2.new(1, -PADDING - 15, 0, 35); HueSlider.Size = UDim2.new(0, 10, 0, 80); HueSlider.BorderSizePixel = 1; HueSlider.BorderColor3 = Color3.fromRGB(30, 30, 30)
+        local HueGradient = Instance.new("UIGradient"); HueGradient.Rotation = 90; HueGradient.Parent = HueSlider; HueGradient.Color = ColorSequence.new({ColorSequenceKeypoint.new(0, Color3.fromRGB(255,0,0)),ColorSequenceKeypoint.new(1/6, Color3.fromRGB(255,255,0)),ColorSequenceKeypoint.new(2/6, Color3.fromRGB(0,255,0)),ColorSequenceKeypoint.new(3/6, Color3.fromRGB(0,255,255)),ColorSequenceKeypoint.new(4/6, Color3.fromRGB(0,0,255)),ColorSequenceKeypoint.new(5/6, Color3.fromRGB(255,0,255)),ColorSequenceKeypoint.new(1, Color3.fromRGB(255,0,0))})
+        local HueCursor = Instance.new("Frame"); HueCursor.Name = "HueCursor"; HueCursor.Parent = HueSlider; HueCursor.BackgroundColor3 = Color3.fromRGB(255, 255, 255); HueCursor.Size = UDim2.new(1, 4, 0, 4); HueCursor.Position = UDim2.new(0, -2, 0, -2); HueCursor.BorderSizePixel = 1; HueCursor.BorderColor3 = Color3.new(0,0,0)
+
+        local RainbowToggle = Instance.new("TextButton"); RainbowToggle.Name = "RainbowToggle"; RainbowToggle.Parent = PickerFrame; RainbowToggle.Size = UDim2.new(0, 20, 0, 20); RainbowToggle.Position = UDim2.new(1, -20-PADDING, 1, -20-PADDING); RainbowToggle.BackgroundColor3 = Color3.fromRGB(47, 54, 64); RainbowToggle.BorderColor3 = Color3.fromRGB(113, 128, 147); RainbowToggle.Text = ""
+        local RainbowLabel = Instance.new("TextLabel"); RainbowLabel.Name = "RainbowLabel"; RainbowLabel.Parent = RainbowToggle; RainbowLabel.Size = UDim2.new(1, -25, 1, 0); RainbowLabel.Position = UDim2.new(0, -110, 0, 0); RainbowLabel.BackgroundTransparency = 1; RainbowLabel.Font = Enum.Font.SourceSans; RainbowLabel.Text = "Rainbow:"; RainbowLabel.TextColor3 = Color3.fromRGB(245, 246, 250); RainbowLabel.TextSize = 14; RainbowLabel.TextXAlignment = Enum.TextXAlignment.Right
+        local RainbowFiller = Instance.new("Frame"); RainbowFiller.Name = "RainbowFiller"; RainbowFiller.Parent = RainbowToggle; RainbowFiller.BackgroundColor3 = Color3.fromRGB(68, 189, 50); RainbowFiller.BorderColor3 = Color3.fromRGB(47, 54, 64); RainbowFiller.Position = UDim2.new(0, PADDING/2, 0, PADDING/2); RainbowFiller.Size = UDim2.new(1, -PADDING, 1, -PADDING); RainbowFiller.Visible = isRainbow
+
+        local hue, sat, val = Color3.toHSV(currentColor)
+
+        local function updateColorFromPicker(updateCallback)
+            local hsvColor = Color3.fromHSV(hue, sat, val)
+            currentColor = hsvColor
+            ColorDisplay.BackgroundColor3 = currentColor
+            if not isRainbow and updateCallback then pcall(callback, currentColor) end
+        end
+        local function updatePickerFromColor()
+             hue, sat, val = Color3.toHSV(currentColor)
+             local canvasSize = Canvas.AbsoluteSize
+             local hueSize = HueSlider.AbsoluteSize
+             Cursor.Position = UDim2.fromOffset(canvasSize.X * sat - Cursor.Size.X.Offset/2, canvasSize.Y * (1 - val) - Cursor.Size.Y.Offset/2)
+             HueCursor.Position = UDim2.fromOffset(HueCursor.Position.X.Offset, hueSize.Y * hue - HueCursor.Size.Y.Offset/2)
+             CanvasGradient.Color = ColorSequence.new{ColorSequenceKeypoint.new(0,Color3.new(1,1,1)), ColorSequenceKeypoint.new(1,Color3.fromHSV(hue, 1, 1))}
+        end
+
+        updatePickerFromColor() -- Initial setup
+
+        -- Input Handling for Picker
+        local draggingCanvas, draggingHue = false, false
+        Canvas.InputBegan:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then draggingCanvas = true; closePopups() end end)
+        HueSlider.InputBegan:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then draggingHue = true; closePopups() end end)
+        UserInputService.InputChanged:Connect(function(input)
+            if draggingCanvas and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+                local canvasPos = Canvas.AbsolutePosition; local canvasSize = Canvas.AbsoluteSize
+                sat = math.clamp((input.Position.X - canvasPos.X) / canvasSize.X, 0, 1)
+                val = 1 - math.clamp((input.Position.Y - canvasPos.Y) / canvasSize.Y, 0, 1)
+                Cursor.Position = UDim2.fromOffset(canvasSize.X*sat - Cursor.Size.X.Offset/2, canvasSize.Y*(1-val) - Cursor.Size.Y.Offset/2)
+                updateColorFromPicker(true)
+            elseif draggingHue and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+                local huePos = HueSlider.AbsolutePosition; local hueSize = HueSlider.AbsoluteSize
+                hue = math.clamp((input.Position.Y - huePos.Y) / hueSize.Y, 0, 1)
+                HueCursor.Position = UDim2.fromOffset(HueCursor.Position.X.Offset, hueSize.Y * hue - HueCursor.Size.Y.Offset/2)
+                CanvasGradient.Color = ColorSequence.new{ColorSequenceKeypoint.new(0,Color3.new(1,1,1)), ColorSequenceKeypoint.new(1,Color3.fromHSV(hue, 1, 1))}
+                updateColorFromPicker(true)
+            end
+        end)
+        UserInputService.InputEnded:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                draggingCanvas = false; draggingHue = false
+            end
+        end)
+
+        -- Rainbow Toggle Logic
+        local function updateRainbow()
+            isRainbow = RainbowFiller.Visible
+            if isRainbow then
+                if rainbowConnection then rainbowConnection:Disconnect() end
+                rainbowConnection = RunService.Heartbeat:Connect(function()
+                    local rainbowColor = Color3.fromHSV(tick() % 5 / 5, 1, 1)
+                    currentColor = rainbowColor
+                    ColorDisplay.BackgroundColor3 = rainbowColor
+                    pcall(callback, rainbowColor) -- Send rainbow color
+                end)
+            else
+                if rainbowConnection then rainbowConnection:Disconnect(); rainbowConnection = nil end
+                 hue, sat, val = Color3.toHSV(ColorDisplay.BackgroundColor3) -- Get last non-rainbow color
+                 updateColorFromPicker(true) -- Update with static color
+            end
+        end
+        RainbowToggle.MouseButton1Click:Connect(function() RainbowFiller.Visible = not RainbowFiller.Visible; updateRainbow() end)
+        if isRainbow then updateRainbow() end -- Start rainbow if default was true
+
+        local function closePicker()
+            if not isOpen then return end
+            isOpen = false; PickerFrame.Visible = false
+            for i, func in ipairs(closableElements) do if func == closePicker then table.remove(closableElements, i); break end end
+        end
+        local function openPicker()
+            closePopups(); isOpen = true; PickerFrame.Visible = true
+            -- Position the picker relative to the button
+            PickerFrame.Position = UDim2.fromOffset(PickerButtonFrame.AbsolutePosition.X + PickerButtonFrame.AbsoluteSize.X + PADDING, PickerButtonFrame.AbsolutePosition.Y)
+            -- Ensure picker stays within screen bounds (basic check)
+            local screenS = screenGui.AbsoluteSize
+            if PickerFrame.AbsolutePosition.X + pickerWidth > screenS.X then PickerFrame.Position = UDim2.fromOffset(PickerButtonFrame.AbsolutePosition.X - pickerWidth - PADDING, PickerFrame.Position.Y.Offset) end
+            if PickerFrame.AbsolutePosition.Y + pickerHeight > screenS.Y then PickerFrame.Position = UDim2.fromOffset(PickerFrame.Position.X.Offset, screenS.Y - pickerHeight - PADDING) end
+            table.insert(closableElements, closePicker)
+        end
+
+        ClosePicker.MouseButton1Click:Connect(closePicker)
+        ColorDisplay.InputBegan:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 then openPicker() end end) -- Open on click
+
+        addElement(elementHeight)
+        local pickerControl = {}
+        function pickerControl:SetColor(newColor) -- Method to set color programmatically
+            if isRainbow then RainbowFiller.Visible = false; updateRainbow() end -- Turn off rainbow
+            currentColor = newColor
+            ColorDisplay.BackgroundColor3 = currentColor
+            updatePickerFromColor()
+        end
+        return pickerControl
+	end
+
+    --[[ TODO: Add :TextBox ]]
 
 	return sectionFunctions
 end
 
 function library:Destroy()
-	-- (Функция Destroy остается без изменений)
-	if screenGui then
-		screenGui:Destroy()
-		screenGui = nil
-		mainPanel = nil
-        mainContentArea = nil
-        leftPanel = nil
-        rightPanel = nil
-        leftPanelLayout = nil
-		sectionButtons = {}
-        sectionContentFrames = {}
-        activeSectionName = nil
-		if dragConnection then dragConnection:Disconnect(); dragConnection = nil end
-        if keybindConnection then keybindConnection:Disconnect(); keybindConnection = nil end
-		print("TurtleUiLib_TwoPanel Destroyed.")
-	end
+	if screenGui then screenGui:Destroy(); screenGui = nil; mainPanel = nil; mainContentArea = nil; leftPanel = nil; rightPanel = nil; leftPanelLayout = nil; sectionButtons = {}; sectionContentFrames = {}; activeSectionName = nil; if dragConnection then dragConnection:Disconnect(); dragConnection = nil end; if keybindConnection then keybindConnection:Disconnect(); keybindConnection = nil end; print("TurtleUiLib_TwoPanel_Enhanced Destroyed.") end
 end
-
 local keybindConnection = nil
-function library:Hide()
-	-- (Функция Hide остается без изменений)
-	if screenGui then
-		screenGui.Enabled = not screenGui.Enabled
-	end
-end
+function library:Hide() if screenGui then screenGui.Enabled = not screenGui.Enabled end end
 function library:Keybind(key)
-	-- (Функция Keybind остается без изменений)
-	if not UserInputService then return end
-	if keybindConnection then keybindConnection:Disconnect() end
-	local keyCodeEnum = Enum.KeyCode[key]
+	if not UserInputService then return end; if keybindConnection then keybindConnection:Disconnect() end; local keyCodeEnum = Enum.KeyCode[key]
 	if not keyCodeEnum then warn("Invalid keybind key:", key); return end
-	keybindConnection = UserInputService.InputBegan:Connect(function(input, gameProcessedEvent)
-		if not gameProcessedEvent and input.KeyCode == keyCodeEnum then library:Hide() end
-	end)
+	keybindConnection = UserInputService.InputBegan:Connect(function(input, gameProcessedEvent) if not gameProcessedEvent and input.KeyCode == keyCodeEnum then library:Hide() end end)
 	print("Keybind set to:", key)
 end
 
